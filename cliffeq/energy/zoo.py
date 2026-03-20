@@ -18,12 +18,18 @@ class BilinearEnergy(EnergyFunction):
         super().__init__(use_spectral_norm=use_spectral_norm)
         self.register_buffer("g", sig_g)
         self.sig = CliffordSignature(sig_g)
+        self.hidden_dim = hidden_nodes
         self.W = nn.Parameter(torch.randn(hidden_nodes, in_nodes, self.sig.n_blades) * 0.1)
+        self.W_out = nn.Parameter(torch.randn(1, hidden_nodes, self.sig.n_blades) * 0.1)
         self.input_x = None
         self.apply_sn()
 
     def set_input(self, x):
         self.input_x = x
+
+    def get_output(self, h):
+        W_out_h = geometric_product(h, self.W_out, self.g)
+        return scalar_part(W_out_h).sum(dim=-1, keepdim=True)
 
     def forward(self, h: torch.Tensor) -> torch.Tensor:
         # E = 0.5 * ||h||^2 - scalar(h̃ W x)
