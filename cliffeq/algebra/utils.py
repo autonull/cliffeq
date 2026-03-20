@@ -159,3 +159,22 @@ def embed_vector(x, sig):
     elif sig.dim == 1:
         res[..., 1:2] = x
     return res
+
+def grade_soft_threshold(x, lambdas, sig):
+    """
+    Apply soft thresholding independently per grade.
+    lambdas: list or dict of thresholds per grade {grade: value}
+    """
+    if sig.dim == 3:
+        blade_grades = [0, 1, 1, 1, 2, 2, 2, 3]
+    elif sig.dim == 2:
+        blade_grades = [0, 1, 1, 2]
+    else:
+        blade_grades = [0, 1]
+
+    out = x.clone()
+    for i, g in enumerate(blade_grades):
+        l = lambdas[g] if isinstance(lambdas, (list, torch.Tensor)) else lambdas.get(g, 0.0)
+        if l > 0:
+            out[..., i] = torch.sign(x[..., i]) * torch.relu(torch.abs(x[..., i]) - l)
+    return out

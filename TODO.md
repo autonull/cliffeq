@@ -426,7 +426,7 @@ Update: x^(t+1) = grade_soft_thresh(x^(t) − (1/L) A^T(Ax^(t) − y), {λ_k/L})
 
 LISTA variant: learn A, λ_k jointly (unrolled ISTA as network layers, but layers are Clifford).
 
-- [ ] Implement `CliffordISTA` and `CliffordLISTA`
+- [x] Implement `CliffordISTA` and `CliffordLISTA`
 - [ ] Task: sparse reconstruction of geometric signals (3D point clouds, optical flow)
 - [ ] Compare: standard ISTA, Clifford-ISTA, Clifford-EP
 - [ ] **Novel question:** do Clifford dictionary atoms learn geometrically interpretable filters (oriented edges, oriented planes)?
@@ -443,7 +443,7 @@ Error:  ε_l = x_l − x̂_l      (multivector residual)
 Update: x_l ← x_l − α ε_l;  W_l ← W_l + η (ε_{l−1} ⊗ x_l)
 ```
 
-- [ ] Task: masked reconstruction (MNIST with 50% masked; test on rotated test set)
+- [x] Task: masked reconstruction (MNIST with 50% masked; test on rotated test set)
 - [ ] Compare: scalar PC, Clifford-BP autoencoder, Clifford-PC
 - [ ] **Key question:** do multivector prediction errors carry orientation information that scalar PC discards, resulting in geometrically consistent reconstructions?
 
@@ -453,7 +453,7 @@ Update: x_l ← x_l − α ε_l;  W_l ← W_l + η (ε_{l−1} ⊗ x_l)
 
 **Novel:** Compute layer targets as geometric inverses. If forward pass is `x_l = f(x_{l−1})`, the target for layer l−1 given target `x_l^target` is: `x_{l−1}^target ≈ f⁻¹(x_l^target)` where inversion uses the Clifford reversal: `f⁻¹(y) ≈ W̃ ✶ y / ‖W‖²`.
 
-- [ ] Task: same as P2.6 (masked reconstruction)
+- [x] Task: same as P2.6 (masked reconstruction)
 - [ ] Compare: standard TP, Clifford-TP, Clifford-EP, Clifford-PC
 - [ ] **Key question:** is geometric inversion via Clifford reversal a better layer-target approximation than pseudo-inverse?
 
