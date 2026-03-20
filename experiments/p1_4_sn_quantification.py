@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from cliffeq.energy.base import EnergyFunction
 from cliffeq.dynamics.rules import LinearDot
-from cliffeq.algebra.utils import embed_vector, scalar_part, geometric_product
+from cliffeq.algebra.utils import embed_vector, scalar_part
 from cliffeq.training.ep_engine import EPEngine
 from cliffordlayers.signature import CliffordSignature
 import time
@@ -13,31 +13,18 @@ class CliffordBilinearEnergy(EnergyFunction):
         self.g = g
         self.sig = CliffordSignature(g)
         self.hidden_dim = hidden_dim
-        # Using nn.Linear to benefit from apply_sn()
+        # Use nn.Linear to apply spectral norm to weights
         self.w1_lin = nn.Linear(in_nodes * self.sig.n_blades, hidden_dim * self.sig.n_blades, bias=False)
-        self.w2_lin = nn.Linear(hidden_dim * self.sig.n_blades, out_nodes * self.sig.n_blades, bias=False)
         self.input_x = None
         self.apply_sn()
-
     def set_input(self, x):
-        self.input_x = x # (B, Nin, I)
-
+        self.input_x = x
     def forward(self, h: torch.Tensor) -> torch.Tensor:
-        # Simplified bilinear energy using linear layers
-        # E = 0.5 ||h||^2 - <h, W1 x>
         B = h.shape[0]
         h_flat = h.reshape(B, -1)
         x_flat = self.input_x.reshape(B, -1)
         w1x = self.w1_lin(x_flat)
-        E = 0.5 * torch.sum(h_flat ** 2, dim=-1) - torch.sum(h_flat * w1x, dim=-1)
-        return E
-
-    def get_output(self, h):
-        B = h.shape[0]
-        h_flat = h.reshape(B, -1)
-        out_flat = self.w2_lin(h_flat)
-        out = out_flat.reshape(B, -1, self.sig.n_blades)
-        return scalar_part(out).sum(dim=-1, keepdim=True)
+        return 0.5 * torch.sum(h_flat ** 2, dim=-1) - torch.sum(h_flat * w1x, dim=-1)
 
 def run_sn_quantification():
     g = torch.tensor([1.0, 1.0])
@@ -45,32 +32,33 @@ def run_sn_quantification():
     n_samples = 256
     x_in = torch.randn(n_samples, 1, 2)
     x_mv = embed_vector(x_in, sig)
-    y_target = torch.randn(n_samples, 1)
 
-    results = {}
-    for sn_on in [False, True]:
-        energy = CliffordBilinearEnergy(1, 64, 1, g, use_spectral_norm=sn_on)
-        energy.set_input(x_mv)
-        rule = LinearDot()
-        engine = EPEngine(energy, rule, n_free=20, n_clamped=10, beta=0.5, dt=0.2) # High dt to see stability
+    print("Spectral Normalization Impact (Cl(2,0)):")
+    for beta in [0.01, 0.1, 0.5]:
+        print(f"\nNudge Strength beta={beta}:")
+        for sn_on in [False, True]:
+            energy = CliffordBilinearEnergy(1, 64, 1, g, use_spectral_norm=sn_on)
+            energy.set_input(x_mv)
+            rule = LinearDot()
 
-        h_init = torch.randn(n_samples, 64, 4)
+            # Track stability over 50 steps
+            h = torch.randn(n_samples, 64, 4)
+            dt = 0.5 # Aggressive step size to test stability
 
-        start = time.time()
-        # Track convergence over 50 steps
-        h = h_init.clone()
-        energies = []
-        for i in range(50):
-            with torch.no_grad():
-                energies.append(energy(h).sum().item())
-            h = rule.step(h, energy, 0.2)
-        end = time.time()
+            energies = []
+            diverged = False
+            for i in range(50):
+                with torch.no_grad():
+                    e = energy(h).sum().item()
+                    energies.append(e)
+                if abs(e) > 1e10 or torch.isnan(h).any():
+                    diverged = True
+                    break
+                h = rule.step(h, energy, dt)
 
-        name = "SN_ON" if sn_on else "SN_OFF"
-        results[name] = {"energies": energies}
-        print(f"Config {name}: Initial Energy {energies[0]:.4f}, Final Energy {energies[-1]:.4f}")
-
-    return results
+            status = "DIVERGED" if diverged else f"CONVERGED (Final E: {energies[-1]:.2f})"
+            name = "SN_ON " if sn_on else "SN_OFF"
+            print(f"  {name}: {status}")
 
 if __name__ == "__main__":
     run_sn_quantification()

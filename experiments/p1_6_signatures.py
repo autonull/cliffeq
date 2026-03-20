@@ -25,17 +25,18 @@ class CliffordBilinearEnergy(EnergyFunction):
 
 def run_signatures():
     signatures = {
-        "Cl(2,0)": torch.tensor([1.0, 1.0]),
-        "Cl(3,0)": torch.tensor([1.0, 1.0, 1.0]),
-        "Cl(1,1)": torch.tensor([1.0, -1.0]),
+        "Cl(2,0) Euclidean 2D": torch.tensor([1.0, 1.0]),
+        "Cl(3,0) Euclidean 3D": torch.tensor([1.0, 1.0, 1.0]),
+        "Cl(1,1) Hyperbolic  ": torch.tensor([1.0, -1.0]),
+        "Cl(0,2) Anti-Euclid  ": torch.tensor([-1.0, -1.0]),
     }
 
-    results = {}
+    print("Algebra Signature Exploration (EP Convergence):")
     for name, g in signatures.items():
         sig = CliffordSignature(g)
         energy = CliffordBilinearEnergy(1, 16, 1, g)
 
-        # Random input in matching dim
+        # Consistent random input size matching sig.dim
         x_in = torch.randn(32, 1, sig.dim)
         x_mv = embed_vector(x_in, sig)
         energy.set_input(x_mv)
@@ -43,16 +44,17 @@ def run_signatures():
         rule = LinearDot()
         engine = EPEngine(energy, rule, n_free=20, n_clamped=10, beta=0.1, dt=0.1)
 
+        h_init = torch.randn(32, 16, sig.n_blades) * 0.01
+
         start = time.time()
-        h_init = torch.zeros(32, 16, sig.n_blades)
         h_free = engine.free_phase(h_init)
         end = time.time()
 
-        final_energy = energy(h_free).sum().item()
-        results[name] = {"final_energy": final_energy, "time": end-start}
-        print(f"Signature {name}: Final Energy {final_energy:.4f}, Time {end-start:.4f}s")
+        with torch.no_grad():
+            final_e = energy(h_free).sum().item()
+            h_norm = torch.norm(h_free).item()
 
-    return results
+        print(f"Signature {name}: Final Energy {final_e:8.2f}, State Norm {h_norm:6.4f}, Time {end-start:.4f}s")
 
 if __name__ == "__main__":
     run_signatures()

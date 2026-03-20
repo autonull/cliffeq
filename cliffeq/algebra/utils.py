@@ -17,41 +17,58 @@ def get_kernel_fn(dim):
     else:
         raise NotImplementedError(f"Dimension {dim} not supported")
 
-def geometric_product(x, w, g):
+def geometric_product(x, y, g):
     """
-    Compute the geometric product of multivectors x and weights w.
-    x shape: (batch, n_in, components)
-    w shape: (n_out, n_in, components)
-    result shape: (batch, n_out, components)
+    Compute the geometric product of multivectors x and y.
+    Supports:
+    - Elementwise: x (B, N, I), y (B, N, I) -> (B, N, I)
+    - Weight-based: x (B, Nin, I), y (Nout, Nin, I) -> (B, Nout, I)
     """
     sig = CliffordSignature(g)
     kernel_fn = get_kernel_fn(sig.dim)
+    I = sig.n_blades
 
-    B, Nin, I = x.shape
-    Nout, Nin_w, I_w = w.shape
-    assert Nin == Nin_w
-    assert I == I_w == sig.n_blades
+    if x.shape == y.shape:
+        # Elementwise geometric product
+        B, N, I_x = x.shape
+        assert I_x == I
 
-    # w: (Nout, Nin, I) -> (I, Nout, Nin)
-    w_reshaped = w.permute(2, 0, 1)
+        # Flatten B and N to treat them as channels for the kernel
+        x_flat = x.view(B * N, 1, I) # (BN, 1, I)
+        y_flat = y.view(B * N, 1, I) # (BN, 1, I)
 
-    # get_kernel returns (n_blades_out, kernel)
-    # The reviewer said it returns single tensor, but my test showed it returns a tuple (n_blades, kernel)
-    # Let's verify again carefully.
-    res = kernel_fn(w_reshaped, sig.g)
-    if isinstance(res, tuple):
-        n_blades_out, kernel = res
+        # y_flat as weights: (I, BN, 1)
+        w = y_flat.permute(2, 0, 1)
+        res = kernel_fn(w, sig.g)
+        # Fix: cliffordlayers kernel functions return (n_blades_out, weight_kernel)
+        kernel = res[1] if isinstance(res, tuple) else res
+
+        # x_flat: (BN, I)
+        x_reshaped = x_flat.view(B * N, I)
+
+        # Reshape kernel to (BN, I, I) for batched matrix multiplication
+        kernel = kernel.view(B * N, I, I)
+        out = torch.bmm(kernel, x_reshaped.unsqueeze(-1)).squeeze(-1)
+        return out.view(B, N, I)
+
+    elif y.ndim == 3 and x.ndim == 3:
+        # Weight-based (Linear layer style)
+        # x: (B, Nin, I)
+        # y: (Nout, Nin, I)
+        B, Nin, I_x = x.shape
+        Nout, Nin_y, I_y = y.shape
+        assert Nin == Nin_y and I_x == I and I_y == I
+
+        w = y.permute(2, 0, 1)
+        res = kernel_fn(w, sig.g)
+        kernel = res[1] if isinstance(res, tuple) else res
+
+        x_reshaped = x.reshape(B, Nin * I)
+        out = F.linear(x_reshaped, kernel)
+        return out.view(B, Nout, I)
+
     else:
-        kernel = res
-        n_blades_out = I # fallback
-
-    # x_reshaped: (B, Nin * I)
-    x_reshaped = x.reshape(B, Nin * I)
-
-    # Apply kernel: (B, Nin * I) @ (Nout * I, Nin * I)^T -> (B, Nout * I)
-    out = F.linear(x_reshaped, kernel) # (B, Nout * I)
-
-    return out.reshape(B, Nout, n_blades_out)
+        raise NotImplementedError(f"Geometric product for shapes {x.shape} and {y.shape} not implemented")
 
 def grade_project(x, grades, sig):
     mask = torch.zeros(sig.n_blades, device=x.device)
@@ -63,11 +80,9 @@ def grade_project(x, grades, sig):
         blade_grades = [0, 1]
     else:
         raise NotImplementedError()
-
     for i, g in enumerate(blade_grades):
         if g in grades:
             mask[i] = 1.0
-
     return x * mask
 
 def reverse(x, sig):
@@ -78,7 +93,6 @@ def reverse(x, sig):
         blade_grades = [0, 1, 1, 2]
     elif sig.dim == 1:
         blade_grades = [0, 1]
-
     for i, g in enumerate(blade_grades):
         if g == 2 or g == 3:
             mask[i] = -1.0
@@ -104,63 +118,15 @@ def bivector_part(x, sig):
         return None
 
 def clifford_norm_sq(x, sig):
-    """
-    scalar part of x_tilde * x.
-    Signs for each blade's square:
-    In Cl(n,0) g=[1,1,...]:
-    - grade 0 (1): 1^2 = 1. rev(1)=1. 1*1=1. sign=+1.
-    - grade 1 (ei): ei^2 = 1. rev(ei)=ei. ei*ei=1. sign=+1.
-    - grade 2 (eij): (eij)^2 = -1. rev(eij)=-eij. -eij*eij = 1. sign=+1.
-    - grade 3 (eijk): (eijk)^2 = -1. rev(eijk)=-eijk. -eijk*eijk = 1. sign=+1.
-    Wait, let's re-verify grade 2 in Cl(2,0):
-    e12 = e1 e2. rev(e12) = e2 e1 = -e1 e2 = -e12.
-    rev(e12) * e12 = -e12 * e12 = -(e1 e2 e1 e2) = -(-e1 e1 e2 e2) = e1^2 e2^2 = 1*1 = 1.
-    So signs ARE all +1 for positive signature Euclidean space.
-    If the reviewer says I missed sign flips, maybe they mean the definition of the norm
-    for indefinite signatures or the general definition <rev(x)*x>_0.
-    In Cl(3,0) g=[1,1,1], all blades square to ±1 such that rev(B)*B = 1.
-    Let's check grade 2 again: rev(e12) = e21. e21 * e12 = e2 (e1 e1) e2 = e2^2 = 1.
-    Grade 3: rev(e123) = e321. e321 * e123 = e3 e2 (e1 e1) e2 e3 = e3 e2^2 e3 = e3^2 = 1.
-    So signs should be all +1 for Cl(n,0).
-    If sig has negatives, e.g. Cl(1,1) g=[1, -1]:
-    e1^2 = 1, e2^2 = -1.
-    e12 = e1 e2. rev(e12) = e2 e1.
-    rev(e12)*e12 = e2 e1 e1 e2 = e2^2 = -1.
-    So sign for e12 is -1.
-    My previous implementation used `signs` which accounted for signature!
-    signs = [1.0, g[0], g[1], g[0]*g[1]] for 2D.
-    In Cl(1,1), signs = [1, 1, -1, -1].
-    Let's re-check rev(e12)*e12 for Cl(1,1):
-    rev(e12)*e12 = (e2 e1) * (e1 e2) = e2 (e1 e1) e2 = e2^2 = -1.
-    My code `signs` for e12 was `g[0]*g[1]` = 1 * -1 = -1. CORRECT.
-    The reviewer might be wrong about Cl(n,0) needing sign flips,
-    but I should make sure my `signs` are correct for any signature.
-    The scalar part of rev(B)*B for a blade B is indeed the product of the metrics of the indices.
-    B = e_{i1...ik}. rev(B) = e_{ik...i1}.
-    rev(B)B = e_{ik}...e_{i2} e_{i1} e_{i1} e_{i2}...e_{ik} = g_{i1} g_{i2}...g_{ik}.
-    YES. This is what my code did: `signs` is the product of metrics for each blade.
-    """
     g = sig.g
     if sig.dim == 3:
-        # 1, e1, e2, e3, e12, e13, e23, e123
-        signs = torch.tensor([
-            1.0,
-            g[0], g[1], g[2],
-            g[0]*g[1], g[0]*g[2], g[1]*g[2],
-            g[0]*g[1]*g[2]
-        ], device=x.device)
+        signs = torch.tensor([1.0, g[0], g[1], g[2], g[0]*g[1], g[0]*g[2], g[1]*g[2], g[0]*g[1]*g[2]], device=x.device)
     elif sig.dim == 2:
-        # 1, e1, e2, e12
-        signs = torch.tensor([
-            1.0,
-            g[0], g[1],
-            g[0]*g[1]
-        ], device=x.device)
+        signs = torch.tensor([1.0, g[0], g[1], g[0]*g[1]], device=x.device)
     elif sig.dim == 1:
         signs = torch.tensor([1.0, g[0]], device=x.device)
     else:
         raise NotImplementedError()
-
     return torch.sum((x ** 2) * signs, dim=-1)
 
 def embed_scalar(x, sig):
