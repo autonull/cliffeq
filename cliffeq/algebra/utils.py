@@ -29,27 +29,33 @@ def geometric_product(x, y, g):
     I = sig.n_blades
 
     if x.shape == y.shape:
-        # Elementwise geometric product
+        # Elementwise geometric product (B, N, I) * (B, N, I) -> (B, N, I)
         B, N, I_x = x.shape
         assert I_x == I
 
-        # Flatten B and N to treat them as channels for the kernel
-        x_flat = x.reshape(B * N, 1, I) # (BN, 1, I)
-        y_flat = y.reshape(B * N, 1, I) # (BN, 1, I)
+        # Reshape x and y for iteration
+        x_flat = x.reshape(B * N, I)  # (BN, I)
+        y_flat = y.reshape(B * N, I)  # (BN, I)
 
-        # y_flat as weights: (I, BN, 1)
-        w = y_flat.permute(2, 0, 1)
-        res = kernel_fn(w, sig.g)
-        # Fix: cliffordlayers kernel functions return (n_blades_out, weight_kernel)
-        kernel = res[1] if isinstance(res, tuple) else res
+        # For each batch element, compute the geometric product using the kernel
+        # This avoids the batching issue where kernel_fn interprets BN as output channels
+        out_list = []
+        for i in range(B * N):
+            # Get y as a weight multivector: (I, 1, 1)
+            y_i = y_flat[i]  # (I,)
+            w_i = y_i.view(I, 1, 1)
 
-        # x_flat: (BN, I)
-        x_reshaped = x_flat.view(B * N, I)
+            # Get kernel for this y_i
+            res_i = kernel_fn(w_i, sig.g)
+            kernel_i = res_i[1] if isinstance(res_i, tuple) else res_i  # (I, I)
 
-        # Reshape kernel to (BN, I, I) for batched matrix multiplication
-        kernel = kernel.view(B * N, I, I)
-        out = torch.bmm(kernel, x_reshaped.unsqueeze(-1)).squeeze(-1)
-        return out.view(B, N, I)
+            # Apply kernel to x_i
+            x_i = x_flat[i]  # (I,)
+            out_i = torch.matmul(kernel_i, x_i)  # (I,)
+            out_list.append(out_i)
+
+        out_flat = torch.stack(out_list)  # (BN, I)
+        return out_flat.view(B, N, I)
 
     elif y.ndim == 3 and x.ndim == 3:
         # Weight-based (Linear layer style)
