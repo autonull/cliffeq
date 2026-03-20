@@ -20,6 +20,22 @@ def convergence_curve(energy_fn: Callable, dynamics_rule: Any, x_init: torch.Ten
         x = dynamics_rule.step(x, energy_fn, dt)
     return energies
 
+def fixed_point_count(energy_fn: Callable, dynamics_rule: Any, shape: tuple, n_init: int = 200, dt: float = 0.1, n_steps: int = 100, eps: float = 1e-4) -> int:
+    fixed_points = []
+    for _ in range(n_init):
+        x = torch.randn(shape) * 0.1
+        for _ in range(n_steps):
+            x = dynamics_rule.step(x, energy_fn, dt)
+
+        is_new = True
+        for fp in fixed_points:
+            if torch.norm(x - fp) < eps:
+                is_new = False
+                break
+        if is_new:
+            fixed_points.append(x.detach().clone())
+    return len(fixed_points)
+
 class MetricsLogger:
     def __init__(self, use_wandb: bool = False, json_path: str = "results/experiment.json"):
         self.use_wandb = use_wandb
@@ -29,7 +45,12 @@ class MetricsLogger:
             import wandb
             self.wandb = wandb
 
-    def log(self, metrics: Dict[str, Any]):
+    def log(self, metrics: Dict[str, Any], energy_fn: Any = None):
+        if energy_fn is not None and hasattr(energy_fn, "get_max_singular_value"):
+            sn_val = energy_fn.get_max_singular_value()
+            if sn_val is not None:
+                metrics["max_singular_value"] = sn_val
+
         self.results.append(metrics)
         if self.use_wandb:
             self.wandb.log(metrics)

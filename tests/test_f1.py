@@ -23,8 +23,11 @@ def test_norm_sq():
     x = torch.tensor([[1.0, 1.0, 0.0, 0.0]])
     n2 = clifford_norm_sq(x, sig)
     assert n2.item() == 2.0
-    x = torch.tensor([[0.0, 0.0, 0.0, 1.0]])
+    x = torch.tensor([[0.0, 0.0, 0.0, 1.0]]) # e12
     n2 = clifford_norm_sq(x, sig)
+    # scalar part of reverse(e12) * e12 = -e12 * e12 = -(-e1*e1 * e2*e2) = 1
+    # Actually reverse(e12) = -e12, e12^2 = e1 e2 e1 e2 = -e1 e1 e2 e2 = -1*1*1 = -1
+    # So reverse(e12) * e12 = -(-1) = 1.
     assert n2.item() == 1.0
     print("test_norm_sq passed")
 

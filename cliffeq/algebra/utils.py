@@ -117,16 +117,32 @@ def bivector_part(x, sig):
     else:
         return None
 
-def clifford_norm_sq(x, sig):
+def get_blade_signs(sig, device):
     g = sig.g
     if sig.dim == 3:
-        signs = torch.tensor([1.0, g[0], g[1], g[2], g[0]*g[1], g[0]*g[2], g[1]*g[2], g[0]*g[1]*g[2]], device=x.device)
+        # 1, e1, e2, e3, e12, e13, e23, e123
+        # squares: 1, g1, g2, g3, -g1g2, -g1g3, -g2g3, -g1g2g3
+        # reverse(x) * x scalar part:
+        # reverse(1) = 1, sq = 1
+        # reverse(ei) = ei, sq = gi
+        # reverse(eij) = -eij, sq = -(-gij) = gij
+        # reverse(e123) = -e123, sq = -(-g123) = g123
+        signs = torch.tensor([1.0, g[0], g[1], g[2], g[0]*g[1], g[0]*g[2], g[1]*g[2], g[0]*g[1]*g[2]], device=device)
     elif sig.dim == 2:
-        signs = torch.tensor([1.0, g[0], g[1], g[0]*g[1]], device=x.device)
+        # 1, e1, e2, e12
+        # reverse(1)=1, sq=1
+        # reverse(ei)=ei, sq=gi
+        # reverse(e12)=-e12, sq=-(-g1g2) = g1g2
+        signs = torch.tensor([1.0, g[0], g[1], g[0]*g[1]], device=device)
     elif sig.dim == 1:
-        signs = torch.tensor([1.0, g[0]], device=x.device)
+        # 1, e1
+        signs = torch.tensor([1.0, g[0]], device=device)
     else:
         raise NotImplementedError()
+    return signs
+
+def clifford_norm_sq(x, sig):
+    signs = get_blade_signs(sig, x.device)
     return torch.sum((x ** 2) * signs, dim=-1)
 
 def embed_scalar(x, sig):
