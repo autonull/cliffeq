@@ -34,8 +34,8 @@ def geometric_product(x, y, g):
         assert I_x == I
 
         # Flatten B and N to treat them as channels for the kernel
-        x_flat = x.view(B * N, 1, I) # (BN, 1, I)
-        y_flat = y.view(B * N, 1, I) # (BN, 1, I)
+        x_flat = x.reshape(B * N, 1, I) # (BN, 1, I)
+        y_flat = y.reshape(B * N, 1, I) # (BN, 1, I)
 
         # y_flat as weights: (I, BN, 1)
         w = y_flat.permute(2, 0, 1)
