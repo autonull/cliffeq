@@ -25,11 +25,16 @@ def run_experiment(script_name, experiment_name):
     print(f"{'='*70}\n")
 
     try:
+        # Change to project root directory to ensure correct Python path
+        import os
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
         result = subprocess.run(
             ['python', f'experiments/{script_name}'],
             capture_output=True,
             text=True,
-            timeout=3600  # 1 hour per experiment
+            timeout=3600,  # 1 hour per experiment
+            cwd=project_root
         )
 
         print(result.stdout)
