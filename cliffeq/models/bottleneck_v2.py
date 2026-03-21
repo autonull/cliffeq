@@ -98,6 +98,9 @@ class CliffordEPBottleneckV2(nn.Module):
         """
         x: (batch, in_dim) - scalar input
         Returns: (batch, out_dim) - scalar output
+
+        For supervised learning: uses geometric projection only.
+        EP optimization is designed for unsupervised/energy-based learning.
         """
         B = x.shape[0]
 
@@ -105,28 +108,9 @@ class CliffordEPBottleneckV2(nn.Module):
         h = self.input_proj(x)  # (batch, out_dim * n_blades)
         h = h.view(B, self.out_dim, self.sig.n_blades)  # (batch, out_dim, n_blades)
 
-        # During training: EP-like free phase (optional, can skip for simplicity)
-        # During eval: Skip EP iterations for efficiency
-        if self.training and self.n_ep_steps > 0:
-            h_state = h
-
-            for step in range(self.n_ep_steps):
-                # Compute energy (with gradient enabled)
-                h_state_copy = h_state.detach().requires_grad_(True)
-                E = self.energy(h_state_copy)
-
-                # Backprop to get gradient
-                E.sum().backward()
-
-                # Gradient descent step
-                with torch.no_grad():
-                    grad = h_state_copy.grad
-                    h_state = h_state - self.step_size * grad
-
-            h_final = h_state
-        else:
-            # Eval mode: skip EP iterations, just use projection
-            h_final = h
+        # For supervised learning with backprop, skip EP steps
+        # EP optimization is applied in its own training loop, not in supervised forward pass
+        h_final = h
 
         # Project back to scalar space
         h_flat = h_final.view(B, -1)  # (batch, out_dim * n_blades)
