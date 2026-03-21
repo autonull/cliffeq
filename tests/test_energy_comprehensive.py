@@ -1,8 +1,8 @@
 import torch
 import pytest
-from cliffeq.energy.zoo import NormEnergy, BilinearEnergy, GraphEnergy, HopfieldEnergy
+from cliffeq.energy.zoo import NormEnergy, BilinearEnergy, GraphEnergy, HopfieldEnergy, GradeWeightedEnergy
 from cliffordlayers.signature import CliffordSignature
-from cliffeq.algebra.utils import geometric_product, reverse, scalar_part
+from cliffeq.algebra.utils import geometric_product, reverse, scalar_part, get_blade_signs
 
 @pytest.mark.parametrize("dim", [2, 3])
 def test_bilinear_energy_correctness(dim):
@@ -22,16 +22,13 @@ def test_bilinear_energy_correctness(dim):
     x0 = x[0] # (Nin, I)
 
     E_norm0 = 0.5 * torch.sum(h0**2)
+    Wx0 = energy_fn.W_layer(x0.unsqueeze(0)).squeeze(0) # (Nh, I)
 
-    # Wx = W * x0
-    # W: (Nh, Nin, I)
-    # x0: (Nin, I)
-    Wx0 = geometric_product(x0.unsqueeze(0), energy_fn.W, g).squeeze(0) # (Nh, I)
-
-    # E_int = scalar(h̃ * Wx)
-    h0_rev = reverse(h0, energy_fn.sig)
-    res = geometric_product(h0_rev.unsqueeze(1), Wx0.unsqueeze(1), g) # (Nh, 1, I)
-    E_int0 = scalar_part(res).sum()
+    # scalar(rev(rho(h)) * Wx)
+    # rho(h) = clamp(h, 0, 1)
+    rho_h0 = torch.clamp(h0, 0, 1)
+    signs = get_blade_signs(energy_fn.sig, h0.device)
+    E_int0 = torch.sum(rho_h0 * Wx0 * signs)
 
     expected0 = E_norm0 - E_int0
     torch.testing.assert_close(E[0], expected0)
@@ -48,5 +45,20 @@ def test_hopfield_energy():
     M, N = 5, 10
     energy_fn = HopfieldEnergy(M, N, g)
     x = torch.randn(2, N, energy_fn.sig.n_blades)
+    E = energy_fn(x)
+    assert E.shape == (2,)
+
+def test_graph_energy():
+    g = torch.ones(2)
+    N = 5
+    energy_fn = GraphEnergy(N, g)
+    x = torch.randn(2, N, energy_fn.sig.n_blades)
+    E = energy_fn(x)
+    assert E.shape == (2,)
+
+def test_grade_weighted_energy():
+    g = torch.ones(2)
+    energy_fn = GradeWeightedEnergy(g)
+    x = torch.randn(2, 5, 4)
     E = energy_fn(x)
     assert E.shape == (2,)

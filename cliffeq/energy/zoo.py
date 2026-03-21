@@ -9,8 +9,7 @@ class NormEnergy(EnergyFunction):
         super().__init__(use_spectral_norm=use_spectral_norm)
 
     def forward(self, state: torch.Tensor) -> torch.Tensor:
-        # E = ||x||^2 = scalar(x̃x)
-        # For simplicity, we use squared Euclidean norm of the components
+        # E = 0.5 * ||x||^2
         return 0.5 * torch.sum(state**2, dim=tuple(range(1, state.ndim)))
 
 class BilinearEnergy(EnergyFunction):
@@ -19,8 +18,16 @@ class BilinearEnergy(EnergyFunction):
         self.register_buffer("g", sig_g)
         self.sig = CliffordSignature(sig_g)
         self.hidden_dim = hidden_nodes
-        self.W = nn.Parameter(torch.randn(hidden_nodes, in_nodes, self.sig.n_blades) * 0.1)
-        self.W_out = nn.Parameter(torch.randn(1, hidden_nodes, self.sig.n_blades) * 0.1)
+
+        from cliffordlayers.nn.modules.cliffordlinear import CliffordLinear
+        g_val = sig_g.tolist() if isinstance(sig_g, torch.Tensor) else sig_g
+        # CliffordLinear bias=False is currently bugged in the library, use bias=True and zero it
+        self.W_layer = CliffordLinear(g_val, in_nodes, hidden_nodes, bias=True)
+        self.W_out_layer = CliffordLinear(g_val, hidden_nodes, 1, bias=True)
+        with torch.no_grad():
+            self.W_layer.bias.zero_()
+            self.W_out_layer.bias.zero_()
+
         self.input_x = None
         self.apply_sn()
 
@@ -28,18 +35,20 @@ class BilinearEnergy(EnergyFunction):
         self.input_x = x
 
     def get_output(self, h):
-        W_out_h = geometric_product(h, self.W_out, self.g)
-        return scalar_part(W_out_h).sum(dim=-1, keepdim=True)
+        # rho(h) = clamp(h, 0, 1)
+        rho_h = torch.clamp(h, 0, 1)
+        out_mv = self.W_out_layer(rho_h)
+        return out_mv[..., 0]
 
     def forward(self, h: torch.Tensor) -> torch.Tensor:
-        # E = 0.5 * ||h||^2 - scalar(h̃ W x)
-        # scalar(h̃ Wx) = Σ_i signs_i * h_i * (Wx)_i
+        # E = 0.5 * ||h||^2 - scalar(rev(rho(h)) * W * x)
+        rho_h = torch.clamp(h, 0, 1)
         E_norm = 0.5 * torch.sum(h**2, dim=(-1, -2))
-        Wx = geometric_product(self.input_x, self.W, self.g)
+        Wx = self.W_layer(self.input_x)
 
+        # scalar(rev(A) * B) = sum_i signs_i * A_i * B_i
         signs = get_blade_signs(self.sig, h.device)
-        # h: (B, N_h, I), Wx: (B, N_h, I), signs: (I,)
-        E_int = torch.einsum("bni,bni,i->b", h, Wx, signs)
+        E_int = torch.einsum("bni,bni,i->b", rho_h, Wx, signs)
         return E_norm - E_int
 
 class GraphEnergy(EnergyFunction):
@@ -51,14 +60,16 @@ class GraphEnergy(EnergyFunction):
         self.apply_sn()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # E = Σ_{ij} scalar(x̃_i W_ij x_j)
-        # x: (B, N, I)
+        # E = 0.5 * ||x||^2 + Σ_{ij} scalar(rev(x_i) * W_ij * x_j)
+        E_norm = 0.5 * torch.sum(x**2, dim=(-1, -2))
         Wx = geometric_product(x, self.W, self.g) # (B, N, I)
         signs = get_blade_signs(self.sig, x.device)
-        return torch.einsum("bni,bni,i->b", x, Wx, signs)
+        # scalar(rev(x) * Wx)
+        E_int = torch.einsum("bni,bni,i->b", x, Wx, signs)
+        return E_norm + E_int
 
 class GradeWeightedEnergy(EnergyFunction):
-    def __init__(self, nodes, sig_g, lambdas=None, use_spectral_norm: bool = False):
+    def __init__(self, sig_g, lambdas=None, use_spectral_norm: bool = False):
         super().__init__(use_spectral_norm=use_spectral_norm)
         self.register_buffer("g", sig_g)
         self.sig = CliffordSignature(sig_g)
@@ -72,12 +83,14 @@ class GradeWeightedEnergy(EnergyFunction):
             blade_grades = [0, 1, 1, 1, 2, 2, 2, 3]
         elif self.sig.dim == 2:
             blade_grades = [0, 1, 1, 2]
-        else:
+        elif self.sig.dim == 1:
             blade_grades = [0, 1]
+        else:
+            blade_grades = [0] * x.shape[-1]
 
         E = 0.0
         for i, g in enumerate(blade_grades):
-            E += self.lambdas[g] * torch.sum(x[..., i]**2, dim=-1)
+            E += self.lambdas[g] * torch.sum(x[..., i]**2, dim=tuple(range(1, x.ndim-1)))
         return E
 
 class HopfieldEnergy(EnergyFunction):
@@ -89,14 +102,12 @@ class HopfieldEnergy(EnergyFunction):
         self.beta = beta
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # E = -log Σ_m exp(β · scalar(ξ̃_m x))
-        # x: (B, N, I), patterns: (M, N, I)
-        # ξ̃_m x product: we want scalar part
-        # scalar(ξ̃_m x) = Σ_i signs_i * reverse(ξ)_mi * x_i
-        from cliffeq.algebra.utils import get_blade_signs, reverse
-        signs = get_blade_signs(self.sig, x.device)
-        patterns_rev = reverse(self.patterns, self.sig)
+        # E = 0.5 * ||x||^2 - (1/beta) * log Σ_m exp(β · scalar(rev(ξ_m) x))
+        E_norm = 0.5 * torch.sum(x**2, dim=(-1, -2))
 
-        # (B, N, I), (M, N, I) -> (B, M)
-        sim = torch.einsum("bni,mni,i->bm", x, patterns_rev, signs)
-        return -torch.logsumexp(self.beta * sim, dim=-1)
+        signs = get_blade_signs(self.sig, x.device)
+        # scalar(rev(patterns) * x) = sum_i signs_i * patterns_i * x_i
+        # patterns: (M, N, I), x: (B, N, I) -> (B, M)
+        sim = torch.einsum("mni,bni,i->bm", self.patterns, x, signs)
+        E_hop = - (1.0 / self.beta) * torch.logsumexp(self.beta * sim, dim=-1)
+        return E_norm + E_hop
