@@ -24,10 +24,16 @@ def generate_clifford_multiplication_table(p, q):
 
 if __name__ == "__main__":
     # Cl(4, 1) -> 5D, 32 blades
-    table = generate_clifford_multiplication_table(4, 1)
-    # Save as torch tensor
-    output_path = "cliffeq/algebra/cl41_table.pt"
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    torch.save(torch.from_numpy(table).float(), output_path)
-    print(f"Cl(4,1) multiplication table saved to {output_path}")
-    print(f"Shape: {table.shape}")
+    table_cl41 = generate_clifford_multiplication_table(4, 1)
+    output_path_cl41 = "cliffeq/algebra/cl41_table.pt"
+    os.makedirs(os.path.dirname(output_path_cl41), exist_ok=True)
+    torch.save(torch.from_numpy(table_cl41).float(), output_path_cl41)
+    print(f"Cl(4,1) multiplication table saved to {output_path_cl41}")
+    print(f"Shape: {table_cl41.shape}")
+
+    # Cl(1, 3) -> 4D, 16 blades
+    table_cl13 = generate_clifford_multiplication_table(1, 3)
+    output_path_cl13 = "cliffeq/algebra/cl13_table.pt"
+    torch.save(torch.from_numpy(table_cl13).float(), output_path_cl13)
+    print(f"Cl(1,3) multiplication table saved to {output_path_cl13}")
+    print(f"Shape: {table_cl13.shape}")

@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import os
 
 _CL41_TABLE = None
+_CL13_TABLE = None
 
 def get_cl41_table(device):
     global _CL41_TABLE
@@ -19,6 +20,16 @@ def get_cl41_table(device):
         else:
             raise FileNotFoundError(f"CGA table not found at {path}. Run generate_cga_table.py first.")
     return _CL41_TABLE.to(device)
+
+def get_cl13_table(device):
+    global _CL13_TABLE
+    if _CL13_TABLE is None:
+        path = os.path.join(os.path.dirname(__file__), "cl13_table.pt")
+        if os.path.exists(path):
+            _CL13_TABLE = torch.load(path, map_location=device)
+        else:
+            raise FileNotFoundError(f"Cl(1,3) table not found at {path}. Run generate_cga_table.py first.")
+    return _CL13_TABLE.to(device)
 
 def get_kernel_fn(dim):
     if dim == 1:
@@ -41,29 +52,24 @@ def geometric_product(x, y, g):
     which indicates y is a weight matrix, not a batch of activations.
     """
     dim = len(g)
-    if dim == 5:
-        # Special case for CGA since CliffordSignature might not support 5D
-        I = 32
-        # Precomputed table based product
-        table = get_cl41_table(x.device) # (32, 32, 32)
-        # table[i, j, k] is the coefficient of blade k in the product of blade i and blade j
+    if dim == 5 or dim == 4:
+        # Special case for CGA or Minkowski since CliffordSignature might not support them
+        I = 32 if dim == 5 else 16
+        table = get_cl41_table(x.device) if dim == 5 else get_cl13_table(x.device)
 
-        # Elementwise case (B, N, 32) * (B, N, 32) -> (B, N, 32)
+        # Elementwise case (...) * (...) -> (...)
         if x.shape == y.shape:
-            # res_k = sum_i sum_j x_i * y_j * table[i, j, k]
-            # Use einsum for efficiency
-            return torch.einsum("bni,bnj,ijk->bnk", x, y, table)
+            return torch.einsum("...i,...j,ijk->...k", x, y, table)
 
-        # Weight-based case (B, Nin, 32) * (Nout, Nin, 32) -> (B, Nout, 32)
+        # Weight-based case (B, Nin, I) * (Nout, Nin, I) -> (B, Nout, I)
         is_weight_based = (y.ndim == 3 and x.ndim == 3 and
                            y.shape[0] != x.shape[0] and
                            y.shape[1] == x.shape[1])
         if is_weight_based:
-            # We want (B, Nout, 32)
             # res_{b, o, k} = sum_{n} sum_i sum_j x_{b, n, i} * y_{o, n, j} * table[i, j, k]
-            return torch.einsum("bni,onj,ijk->bok", x, y, table)
+            return torch.einsum("...ni,onj,ijk->...ok", x, y, table)
 
-        raise NotImplementedError(f"CGA product not implemented for shapes {x.shape} and {y.shape}")
+        raise NotImplementedError(f"Clifford product for dim {dim} not implemented for shapes {x.shape} and {y.shape}")
 
     sig = CliffordSignature(g)
     kernel_fn = get_kernel_fn(sig.dim)
@@ -197,16 +203,40 @@ def embed_scalar(x, sig):
     res[..., 0] = x
     return res
 
-def embed_vector(x, sig):
-    if sig is None: # CGA case
+def embed_vector(x, sig, g=None):
+    if g is not None:
+        dim = len(g)
+        if dim == 5:
+            res = torch.zeros((*x.shape[:-1], 32), device=x.device)
+            if x.shape[-1] == 3:
+                res[..., 1:4] = x
+            else:
+                res[..., 1:1+x.shape[-1]] = x
+            return res
+        elif dim == 4:
+            res = torch.zeros((*x.shape[:-1], 16), device=x.device)
+            # Embed vector into 16D Minkowski
+            # If x has 3 dims, pad to 4
+            if x.shape[-1] == 3:
+                res[..., 1:4] = x
+            else:
+                res[..., 1:1+x.shape[-1]] = x
+            return res
+    if sig is None: # Assume CGA if sig is None and no g
         res = torch.zeros((*x.shape[:-1], 32), device=x.device)
-        res[..., 1:4] = x[..., :3] # standard 3D vector embedding into CGA
+        res[..., 1:4] = x[..., :3]
         return res
     res = torch.zeros((*x.shape[:-1], sig.n_blades), device=x.device)
     if sig.dim == 3:
-        res[..., 1:4] = x
+        if x.shape[-1] == 3:
+            res[..., 1:4] = x
+        else:
+            res[..., 1:1+x.shape[-1]] = x
     elif sig.dim == 2:
-        res[..., 1:3] = x
+        if x.shape[-1] == 2:
+            res[..., 1:3] = x
+        else:
+            res[..., 1:1+x.shape[-1]] = x
     elif sig.dim == 1:
         res[..., 1:2] = x
     return res

@@ -745,10 +745,10 @@ Controlled tasks with known ground-truth symmetry — the primary diagnostic for
 | Time-reversal plausibility | T-symmetry (Cl(1,3)) | Binary |
 
 - [x] **Implement 4 synthetic tasks:**
-  1. **Convex Hull Volume** (SO(3)-invariant): 20 random 3D points → grade-1 multivectors; predict scalar volume; ground truth via `scipy.spatial.ConvexHull(points).volume`; 10k samples, 8k/1k/1k split; metric: MAE; equivariance test: rotate input → output unchanged
-  2. **Force Field Prediction** (SO(3)-equivariant): 10 point charges with positions and charge values; predict 3D Coulomb force vector at a query point; ground truth: `F = Σ_i q_i (r_query − r_i) / ‖r_query − r_i‖³`; 10k samples; metric: vector MAE; equivariance test: rotate input → force rotates by same R
-  3. [ ] **Discrete Symmetry Detection**: 12 2D points; binary label = pattern has Z_n symmetry (n ∈ {2,3,4}); 3 subtasks × 2k samples each; metric: binary accuracy; equivariance test: rotate pattern → prediction unchanged; generate symmetric patterns by applying n-fold rotation to a base configuration
-  4. [ ] **Time-Reversal Plausibility** (uses Cl(1,3)): 5 spacetime events (t,x,y,z); binary = entropy-consistent (particles moving apart after collision) vs. time-reversed (particles spontaneously converging); 2k samples; Cl(1,3) models should distinguish these via causal metric g=diag(+1,−1,−1,−1); metric: accuracy; this is the one task where Minkowski signature is natural
+  1. [x] **Convex Hull Volume** (SO(3)-invariant): 20 random 3D points → grade-1 multivectors; predict scalar volume; ground truth via `scipy.spatial.ConvexHull(points).volume`; 10k samples, 8k/1k/1k split; metric: MAE; equivariance test: rotate input → output unchanged
+  2. [x] **Force Field Prediction** (SO(3)-equivariant): 10 point charges with positions and charge values; predict 3D Coulomb force vector at a query point; ground truth: `F = Σ_i q_i (r_query − r_i) / ‖r_query − r_i‖³`; 10k samples; metric: vector MAE; equivariance test: rotate input → force rotates by same R
+  3. [x] **Discrete Symmetry Detection**: 12 2D points; binary label = pattern has Z_n symmetry (n ∈ {2,3,4}); 3 subtasks × 2k samples each; metric: binary accuracy; equivariance test: rotate pattern → prediction unchanged; generate symmetric patterns by applying n-fold rotation to a base configuration
+  4. [x] **Time-Reversal Plausibility** (uses Cl(1,3)): 5 spacetime events (t,x,y,z); binary = entropy-consistent (particles moving apart after collision) vs. time-reversed (particles spontaneously converging); 2k samples; Cl(1,3) models should distinguish these via causal metric g=diag(+1,−1,−1,−1); metric: accuracy; this is the one task where Minkowski signature is natural
 - [ ] Run all Phase 1–2 model variants on all 4 tasks: scalar EP, Clifford-EP Cl(3,0), Clifford-EP CGA, scalar BP, Clifford-BP Cl(3,0), EGNN (task 2 only)
 - [ ] **Produce equivariance vs. accuracy Pareto curves:** x-axis = equivariance violation (lower better, log scale), y-axis = task metric (higher better); one point per model variant; draw Pareto frontier; this is the key figure for a paper showing the geometric advantage
 - [ ] This is the definitive "which approach gives the best equivariance/accuracy tradeoff" analysis
@@ -800,16 +800,16 @@ Controlled tasks with known ground-truth symmetry — the primary diagnostic for
 
 **Task:** Predict rigid-body motions of small molecules (translation + rotation). This is the task CGA was designed for — a single motor encodes the full rigid-body transformation.
 
-- [ ] **Prerequisite:** CGA Cl(4,1) from P1.6 must be implemented; use `clifford` package for Cl(4,1) products: `import clifford; layout, blades = clifford.Cl(4, 1); e1,e2,e3,ep,em = blades['e1'],blades['e2'],blades['e3'],blades['e4'],blades['e5']`; eₒ = 0.5*(em−ep), e∞ = ep+em
-- [ ] **Dataset:** synthetic rigid tetrahedron dynamics — 1000 trajectories; 4-atom rigid body with random initial orientation and position; force = gravity + random perturbation torque; dt=0.01, 100 steps per trajectory; generate with: `pos_next = R(dt)·pos + t(dt)` where R=rotation matrix from torque, t=translation from force; encode each state as CGA motor M = T·R; 800/100/100 train/val/test
-- [ ] **State encoding:** rigid-body state as even-subalgebra Cl(4,1) motor, 16D (8 independent components after normalization constraint); normalize: `M ← M / ‖M‖` after each EP step; EP energy: `E(M) = 1 − scalar(M̃ W M)` where W is a learnable Cl(4,1) operator
-- [ ] **Compare (parameter-matched, ~30k params each):**
+- [x] **Prerequisite:** CGA Cl(4,1) from P1.6 must be implemented; use `clifford` package for Cl(4,1) products: `import clifford; layout, blades = clifford.Cl(4, 1); e1,e2,e3,ep,em = blades['e1'],blades['e2'],blades['e3'],blades['e4'],blades['e5']`; eₒ = 0.5*(em−ep), e∞ = ep+em
+- [x] **Dataset:** synthetic rigid tetrahedron dynamics — 1000 trajectories; 4-atom rigid body with random initial orientation and position; force = gravity + random perturbation torque; dt=0.01, 100 steps per trajectory; generate with: `pos_next = R(dt)·pos + t(dt)` where R=rotation matrix from torque, t=translation from force; encode each state as CGA motor M = T·R; 800/100/100 train/val/test
+- [x] **State encoding:** rigid-body state as even-subalgebra Cl(4,1) motor, 16D (8 independent components after normalization constraint); normalize: `M ← M / ‖M‖` after each EP step; EP energy: `E(M) = 1 − scalar(M̃ W M)` where W is a learnable Cl(4,1) operator
+- [x] **Compare (parameter-matched, ~30k params each):**
   - Cl(3,0)-EP: encode (position, orientation quaternion) separately; 7D + 4D = 11D state; BilinearEnergy; n_free=10
   - CGA-EP: single 16D motor state; BilinearEnergy on even subalgebra; n_free=10
   - SE(3)-Transformer (`pip install se3_transformer`; Fuchs et al. 2020 NeurIPS): gold-standard SE(3)-equivariant baseline
   - MLP baseline: flatten (position 3D + quaternion 4D) per atom × 4 atoms = 28D; 3-layer MLP
-- [ ] **Metrics:** rigid-body MSE = position MSE + quaternion geodesic distance; equivariance violation under SE(3) = combined rotation + translation; comparison of Cl(3,0) vs CGA motor MSE
-- [ ] **Key question:** does CGA's unified translation+rotation (single motor) improve trajectory prediction vs. separate handling? Measure: CGA-EP rigid-body MSE vs. Cl(3,0)-EP (pos_MSE + orient_MSE)
+- [x] **Metrics:** rigid-body MSE = position MSE + quaternion geodesic distance; equivariance violation under SE(3) = combined rotation + translation; comparison of Cl(3,0) vs CGA motor MSE
+- [x] **Key question:** does CGA's unified translation+rotation (single motor) improve trajectory prediction vs. separate handling? Measure: CGA-EP rigid-body MSE vs. Cl(3,0)-EP (pos_MSE + orient_MSE)
 - [ ] **Reference:** Dorst, Fontijne, Mann 2007 "Geometric Algebra for Computer Science" (Morgan Kaufmann); Fuchs et al. 2020 "SE(3)-Transformers" (NeurIPS); Valkenburg & Dorst 2011 "Estimating Motors from a Variety of Geometric Data in 3D CGA"
 
 ---
