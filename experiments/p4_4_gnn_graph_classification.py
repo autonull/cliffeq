@@ -34,16 +34,16 @@ from cliffeq.models.bottleneck_v2 import CliffordEPBottleneckV2
 
 def create_synthetic_graph_dataset(num_graphs=500, num_nodes_range=(10, 30), num_classes=2):
     """
-    Create synthetic graphs for graph classification.
-    In practice, would use torch_geometric.datasets.MUTAG() or similar.
+    Create harder synthetic graphs for graph classification.
+    Labels based on mixed structural features with noise.
     """
     graphs = []
 
     for _ in range(num_graphs):
         num_nodes = np.random.randint(*num_nodes_range)
 
-        # Generate random graph
-        p_edge = 0.1 + np.random.rand() * 0.1
+        # Generate random graph with varied edge probability
+        p_edge = 0.05 + np.random.rand() * 0.2
         G = nx.erdos_renyi_graph(num_nodes, p_edge)
 
         # Node features (random)
@@ -54,9 +54,19 @@ def create_synthetic_graph_dataset(num_graphs=500, num_nodes_range=(10, 30), num
         if edge_index.numel() == 0:
             edge_index = torch.zeros((2, 0), dtype=torch.long)
 
-        # Label based on structural properties
+        # Harder classification: combine multiple structural features
         density = nx.density(G)
-        is_mutagenic = 1 if (density > 0.15 or len(list(nx.simple_cycles(G.to_directed()))) > 0) else 0
+        num_triangles = sum(nx.triangles(G).values()) / 3
+        avg_degree = 2 * G.number_of_edges() / max(G.number_of_nodes(), 1)
+
+        # Multi-feature decision with noise (30% wrong labels)
+        score = density * 0.4 + (num_triangles / max(num_nodes, 1)) * 0.3 + (avg_degree / 10) * 0.3
+        is_mutagenic = 1 if score > 0.15 else 0
+
+        # Add label noise (30% misclassification)
+        if np.random.rand() < 0.30:
+            is_mutagenic = 1 - is_mutagenic
+
         y = torch.tensor([is_mutagenic], dtype=torch.long)
 
         # Create PyG Data object

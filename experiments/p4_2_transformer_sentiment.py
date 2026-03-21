@@ -32,18 +32,32 @@ from cliffeq.models.bottleneck_v2 import CliffordEPBottleneckV2
 
 def load_sst2_simple(vocab_size=10000, seq_length=100, num_samples=2000):
     """
-    Generate synthetic sentiment data similar to SST-2.
-    In practice, would use HuggingFace datasets.SST2 or similar.
+    Generate harder synthetic sentiment data.
+    Uses mixed signal with noise to prevent 100% accuracy.
     """
-    # Generate synthetic sentences (one-hot encoded tokens)
+    # Generate synthetic sentences (token indices)
     X = torch.randint(0, vocab_size, (num_samples, seq_length))
-    # Positive/negative labels based on specific token patterns
+
+    # Create harder classification task: multiple patterns mixed with noise
     y = torch.zeros(num_samples, dtype=torch.long)
+
+    # Positive tokens (indices 100-200), Negative tokens (indices 200-300)
+    positive_tokens = set(range(100, 200))
+    negative_tokens = set(range(200, 300))
+
     for i in range(num_samples):
-        # Simple heuristic: presence of "good/great/excellent" vs "bad/terrible/awful"
-        if X[i, :10].max() > vocab_size // 2:
-            y[i] = 1
+        # Count positive and negative indicators
+        tokens_in_seq = set(X[i].tolist())
+        pos_count = len(tokens_in_seq & positive_tokens)
+        neg_count = len(tokens_in_seq & negative_tokens)
+
+        # Label based on balance, with randomness (30% noise)
+        if pos_count > neg_count:
+            y[i] = 1 if torch.rand(1) > 0.15 else 0  # 85% positive, 15% noise
+        elif neg_count > pos_count:
+            y[i] = 0 if torch.rand(1) > 0.15 else 1  # 85% negative, 15% noise
         else:
+            # Balanced: random label
             y[i] = torch.randint(0, 2, (1,))
 
     # Train/val split
@@ -230,9 +244,9 @@ def main():
     # Hyperparameters
     vocab_size = 10000
     seq_length = 100
-    num_samples = 2000
+    num_samples = 1500  # Reduced for harder task
     batch_size = 32
-    num_epochs = 15
+    num_epochs = 20  # More epochs to see if models can learn harder task
     learning_rate = 0.001
     d_model = 256
     n_heads = 4

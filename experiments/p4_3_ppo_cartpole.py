@@ -235,8 +235,8 @@ def main():
     print(f"Device: {device}\n")
 
     # Hyperparameters
-    num_train_steps = 1000
-    episodes_per_step = 4
+    num_train_steps = 200  # Reduced from 1000 for faster convergence
+    episodes_per_step = 2  # Reduced from 4
     state_dim = 4
     action_dim = 2
     hidden_dim = 64
@@ -279,8 +279,8 @@ def main():
             trainer_baseline.train_step(states, actions, logits, advantages, returns)
 
         # Evaluate
-        if (step + 1) % 25 == 0:
-            mean_return, std_return = evaluate_policy(env_eval, policy_baseline, device, n_episodes=10)
+        if (step + 1) % 10 == 0:
+            mean_return, std_return = evaluate_policy(env_eval, policy_baseline, device, n_episodes=5)
             baseline_returns.append(mean_return)
             baseline_stds.append(std_return)
             print(f"  Step {(step+1)*episodes_per_step}: Return = {mean_return:.2f} ± {std_return:.2f}")
@@ -323,8 +323,8 @@ def main():
             advantages, returns = trainer_clifford.compute_gae(rewards, values, dones)
             trainer_clifford.train_step(states, actions, logits, advantages, returns)
 
-        if (step + 1) % 25 == 0:
-            mean_return, std_return = evaluate_policy(env_eval, policy_clifford, device, n_episodes=10)
+        if (step + 1) % 10 == 0:
+            mean_return, std_return = evaluate_policy(env_eval, policy_clifford, device, n_episodes=5)
             clifford_returns.append(mean_return)
             clifford_stds.append(std_return)
             print(f"  Step {(step+1)*episodes_per_step}: Return = {mean_return:.2f} ± {std_return:.2f}")
