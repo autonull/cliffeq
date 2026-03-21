@@ -13,6 +13,7 @@ class CliffordAttention(nn.Module):
         self.sig = CliffordSignature(sig_g)
         self.use_orientation_bias = use_orientation_bias
         self.n_blades = self.sig.n_blades
+        self.batch_first = True
 
         d_model = n_heads * clifford_dim * self.n_blades
         self.q_proj = nn.Linear(d_model, d_model)
@@ -72,7 +73,7 @@ class CliffordAttention(nn.Module):
                 logits = logits + attn_mask.view(B, self.n_heads, L, M)
 
         if self.use_orientation_bias:
-            kernel = self.get_kernel(x.device)
+            kernel = self.get_kernel(query.device)
             if self.sig.dim == 3:
                 biv_idx = [4, 5, 6]
             elif self.sig.dim == 2:
