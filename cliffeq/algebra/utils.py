@@ -23,12 +23,40 @@ def geometric_product(x, y, g):
     Supports:
     - Elementwise: x (B, N, I), y (B, N, I) -> (B, N, I)
     - Weight-based: x (B, Nin, I), y (Nout, Nin, I) -> (B, Nout, I)
+
+    Weight-based case is detected when y.shape[0] != x.shape[0] (different first dimension),
+    which indicates y is a weight matrix, not a batch of activations.
     """
     sig = CliffordSignature(g)
     kernel_fn = get_kernel_fn(sig.dim)
     I = sig.n_blades
 
-    if x.shape == y.shape:
+    # Check if this is weight-based (y is a weight matrix, not batched activations)
+    # Weight matrices have shape (Nout, Nin, I) while batched activations have shape (B, N, I)
+    # The key difference: y.shape[0] != x.shape[0] for weights, and y.shape != x.shape
+    is_weight_based = (y.ndim == 3 and x.ndim == 3 and
+                       y.shape[0] != x.shape[0] and  # Different first dimension
+                       y.shape[1] == x.shape[1])      # Same middle dimension (Nin)
+
+    if is_weight_based:
+        # Weight-based (Linear layer style)
+        # x: (B, Nin, I)
+        # y: (Nout, Nin, I)
+        B, Nin, I_x = x.shape
+        Nout, Nin_y, I_y = y.shape
+        assert Nin == Nin_y and I_x == I and I_y == I, f"Shape mismatch: x={x.shape}, y={y.shape}, I={I}, expected y=(Nout, {Nin}, {I})"
+
+        w = y.permute(2, 0, 1)
+        res = kernel_fn(w, sig.g)
+        kernel = res[1] if isinstance(res, tuple) else res
+
+        x_reshaped = x.reshape(B, Nin * I)
+        out = F.linear(x_reshaped, kernel)
+        result = out.view(B, Nout, I)
+        #print(f"    DEBUG: geometric_product weight-based: x={x.shape} w={y.shape} -> {result.shape}")
+        return result
+
+    elif x.shape == y.shape:
         # Elementwise geometric product (B, N, I) * (B, N, I) -> (B, N, I)
         B, N, I_x = x.shape
         assert I_x == I
@@ -56,22 +84,6 @@ def geometric_product(x, y, g):
 
         out_flat = torch.stack(out_list)  # (BN, I)
         return out_flat.view(B, N, I)
-
-    elif y.ndim == 3 and x.ndim == 3:
-        # Weight-based (Linear layer style)
-        # x: (B, Nin, I)
-        # y: (Nout, Nin, I)
-        B, Nin, I_x = x.shape
-        Nout, Nin_y, I_y = y.shape
-        assert Nin == Nin_y and I_x == I and I_y == I
-
-        w = y.permute(2, 0, 1)
-        res = kernel_fn(w, sig.g)
-        kernel = res[1] if isinstance(res, tuple) else res
-
-        x_reshaped = x.reshape(B, Nin * I)
-        out = F.linear(x_reshaped, kernel)
-        return out.view(B, Nout, I)
 
     else:
         raise NotImplementedError(f"Geometric product for shapes {x.shape} and {y.shape} not implemented")

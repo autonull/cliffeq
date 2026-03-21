@@ -29,7 +29,10 @@ class CliffordAttention(nn.Module):
     def get_kernel(self, device):
         from cliffeq.algebra.utils import get_kernel_fn
         kernel_fn = get_kernel_fn(self.sig.dim)
-        res = kernel_fn(torch.eye(self.n_blades, device=device), self.sig_g.to(device))
+        # kernel_fn expects weight tensor of shape (I, Nout, Nin)
+        # Create identity: (I, 1, 1) eye matrix for each blade
+        w = torch.eye(self.n_blades, device=device).unsqueeze(1).unsqueeze(2)  # (I, 1, 1)
+        res = kernel_fn(w, self.sig_g.to(device))
         return res[1] if isinstance(res, tuple) else res
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -60,10 +63,11 @@ class CliffordAttention(nn.Module):
 
             if biv_idx:
                 q_rev = reverse(q, self.sig)
-                biv_kernel = kernel[:, :, biv_idx]
+                biv_kernel = kernel[:, :, biv_idx]  # (I, I, n_biv)
                 # (B, H, L, D, I), (B, H, M, D, I), (I, I, n_biv) -> (B, H, L, M, n_biv)
-                biv_part = torch.einsum("bhldi,bhmdj,ijb->bhlmb", q_rev, k, biv_kernel)
-                bias = torch.einsum("bhlmb,hb->bhlm", biv_part, self.bias_weight)
+                # Note: biv_kernel needs to be transposed to match the einsum contraction
+                biv_part = torch.einsum("bhldi,bhmdi,ijc->bhlmc", q_rev, k, biv_kernel)
+                bias = torch.einsum("bhlmc,hc->bhlm", biv_part, self.bias_weight)
                 logits = logits + bias
 
         attn = F.softmax(logits, dim=-1)

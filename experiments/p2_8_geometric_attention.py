@@ -151,7 +151,9 @@ def test_clifford_attention_backprop():
         def __init__(self, n_heads=2, clifford_dim=8, sig_g=None, use_orientation_bias=True):
             super().__init__()
             self.attention = CliffordAttention(n_heads, clifford_dim, sig_g, use_orientation_bias)
-            self.fc = nn.Linear(n_heads * clifford_dim * 4, n_classes)
+            self.sig = CliffordSignature(sig_g) if sig_g is not None else None
+            n_blades = self.sig.n_blades if self.sig else 4
+            self.fc = nn.Linear(n_heads * clifford_dim * n_blades, n_classes)
 
         def forward(self, x):
             # x: (B, L, n_heads * clifford_dim * n_blades)
@@ -162,7 +164,7 @@ def test_clifford_attention_backprop():
 
     model = CliffordAttentionBlock(
         n_heads=2,
-        clifford_dim=2,
+        clifford_dim=4,  # 8 original features / 2 heads = 4 features per head
         sig_g=sig_g,
         use_orientation_bias=True
     ).to(device)

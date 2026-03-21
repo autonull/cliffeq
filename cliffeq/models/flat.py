@@ -14,10 +14,10 @@ class EPModel(nn.Module):
     beta: Nudge strength in the clamped phase.
     dt: Step size for the dynamics rule.
     """
-    def __init__(self, energy_fn: EnergyFunction, dynamics_rule: DynamicsRule, n_free: int, n_clamped: int, beta: float, dt: float):
+    def __init__(self, energy_fn: EnergyFunction, dynamics_rule: DynamicsRule, n_free: int, n_clamped: int, beta: float, dt: float, use_spectral_norm: bool = False):
         super().__init__()
         self.energy_fn = energy_fn
-        self.engine = EPEngine(energy_fn, dynamics_rule, n_free, n_clamped, beta, dt)
+        self.engine = EPEngine(energy_fn, dynamics_rule, n_free, n_clamped, beta, dt, use_spectral_norm=use_spectral_norm)
 
     def forward(self, x: torch.Tensor, h_init: torch.Tensor = None) -> torch.Tensor:
         """
@@ -66,3 +66,16 @@ class EPModel(nn.Module):
         optimizer.step()
         optimizer.zero_grad()
         return h_free
+
+    def free_phase(self, h_init: torch.Tensor) -> torch.Tensor:
+        """Run free phase directly."""
+        return self.engine.free_phase(h_init)
+
+
+# Alias for compatibility with P2.10 experiments
+class CliffordMLPModel(EPModel):
+    """
+    Clifford MLP Model using Equilibrium Propagation.
+    Drop-in replacement for traditional backprop MLP, using EP training instead.
+    """
+    pass

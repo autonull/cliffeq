@@ -140,22 +140,31 @@ def test_scalar_pc_baseline():
     class ScalarPC(nn.Module):
         def __init__(self, layer_dims):
             super().__init__()
+            self.layer_dims = layer_dims
+            # Weights map forward: (layer_dims[i-1], layer_dims[i])
+            # So weight[l-1] maps layer l-1 to layer l
             self.weights = nn.ParameterList([
-                nn.Parameter(torch.randn(layer_dims[i], layer_dims[i-1]) * 0.1)
+                nn.Parameter(torch.randn(layer_dims[i-1], layer_dims[i]) * 0.1)
                 for i in range(1, len(layer_dims))
             ])
 
         def forward(self, x, n_iter=20, alpha=0.05):
             B = x.shape[0]
             states = [x.detach().clone()]
-            for w in self.weights:
-                states.append(torch.zeros(B, w.shape[0], device=x.device))
+            # Initialize hidden states: layer i has dimension layer_dims[i]
+            for i in range(1, len(self.layer_dims)):
+                states.append(torch.zeros(B, self.layer_dims[i], device=x.device))
 
             for _ in range(n_iter):
                 for l in range(1, len(states)):
+                    # Predict layer l-1 from layer l using weight transpose
+                    # weights[l-1]: (layer_dims[l-1], layer_dims[l])
+                    # states[l]: (B, layer_dims[l])
+                    # prediction: (B, layer_dims[l]) @ (layer_dims[l], layer_dims[l-1]) = (B, layer_dims[l-1])
                     x_hat = torch.matmul(states[l], self.weights[l-1].t())
                     err = states[l-1] - x_hat
-                    grad = -torch.matmul(err, self.weights[l-1])
+                    # grad: (B, layer_dims[l-1]) @ (layer_dims[l-1], layer_dims[l]) = (B, layer_dims[l])
+                    grad = torch.matmul(err, self.weights[l-1])
                     states[l] = states[l] - alpha * grad
 
             return states
