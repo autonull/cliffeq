@@ -35,22 +35,41 @@ class CliffordAttention(nn.Module):
         res = kernel_fn(w, self.sig_g.to(device))
         return res[1] if isinstance(res, tuple) else res
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, L, _ = x.shape
-        q = self.q_proj(x).view(B, L, self.n_heads, self.clifford_dim, self.n_blades)
-        k = self.k_proj(x).view(B, L, self.n_heads, self.clifford_dim, self.n_blades)
-        v = self.v_proj(x).view(B, L, self.n_heads, self.clifford_dim, self.n_blades)
+    def forward(self, query: torch.Tensor, key: torch.Tensor = None, value: torch.Tensor = None,
+                attn_mask: torch.Tensor = None, key_padding_mask: torch.Tensor = None,
+                need_weights: bool = True) -> tuple:
+        """
+        Drop-in replacement for nn.MultiheadAttention.forward.
+        query, key, value: (B, L, d_model) or (L, B, d_model) if batch_first=False (not supported here)
+        """
+        if key is None: key = query
+        if value is None: value = query
+
+        B, L, _ = query.shape
+        M = key.shape[1]
+
+        q = self.q_proj(query).view(B, L, self.n_heads, self.clifford_dim, self.n_blades)
+        k = self.k_proj(key).view(B, M, self.n_heads, self.clifford_dim, self.n_blades)
+        v = self.v_proj(value).view(B, M, self.n_heads, self.clifford_dim, self.n_blades)
 
         q = q.transpose(1, 2) # (B, H, L, D, I)
         k = k.transpose(1, 2) # (B, H, M, D, I)
         v = v.transpose(1, 2) # (B, H, M, D, I)
 
         from cliffeq.algebra.utils import get_blade_signs
-        signs = get_blade_signs(self.sig, x.device)
+        signs = get_blade_signs(self.sig, query.device)
 
         q_rev = reverse(q, self.sig)
         q_w = q_rev * signs
+        # (B, H, L, D, I), (B, H, M, D, I) -> (B, H, L, M)
         logits = torch.einsum("bhldi,bhmdi->bhlm", q_w, k) / (self.clifford_dim * self.n_blades)**0.5
+
+        if attn_mask is not None:
+            # attn_mask: (L, M) or (B*H, L, M)
+            if attn_mask.dim() == 2:
+                logits = logits + attn_mask.unsqueeze(0).unsqueeze(0)
+            else:
+                logits = logits + attn_mask.view(B, self.n_heads, L, M)
 
         if self.use_orientation_bias:
             kernel = self.get_kernel(x.device)
@@ -73,4 +92,8 @@ class CliffordAttention(nn.Module):
         attn = F.softmax(logits, dim=-1)
         out = torch.einsum("bhlm,bhmdi->bhldi", attn, v)
         out = out.transpose(1, 2).reshape(B, L, -1)
-        return out
+
+        if need_weights:
+            # return average weights across heads
+            return out, attn.mean(1)
+        return out, None

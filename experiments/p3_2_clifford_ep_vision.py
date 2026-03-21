@@ -207,7 +207,7 @@ def main():
 
     print("Loading CIFAR-10...")
     try:
-        train_loader, test_loader = load_cifar10(n_samples=5000, batch_size=64)
+        train_loader, test_loader = load_cifar10(n_samples=10000, batch_size=64)
         print(f"Loaded training data\n")
     except Exception as e:
         print(f"Error: {e}")
@@ -218,7 +218,7 @@ def main():
     print("Baseline CNN Training")
     print("-" * 70)
     baseline = BaselineCNN(num_classes=10)
-    baseline = train_model(baseline, train_loader, n_epochs=3)
+    baseline = train_model(baseline, train_loader, n_epochs=10)
 
     acc_baseline, rot_acc_baseline, equivar_baseline = evaluate_rotation_robustness(baseline, test_loader)
 
@@ -232,7 +232,7 @@ def main():
     print("Clifford-Inspired CNN Training (Multi-Scale Features)")
     print("-" * 70)
     clifford_cnn = CliffordCNN(num_classes=10)
-    clifford_cnn = train_model(clifford_cnn, train_loader, n_epochs=3)
+    clifford_cnn = train_model(clifford_cnn, train_loader, n_epochs=10)
 
     acc_clifford, rot_acc_clifford, equivar_clifford = evaluate_rotation_robustness(clifford_cnn, test_loader)
 

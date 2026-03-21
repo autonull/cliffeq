@@ -314,6 +314,7 @@ Run each × {SN off, SN on} = 8 total configurations.
 - [x] Negative data: label-corrupted (standard FF), noise-injected, adversarial (worst-case test)
 - [x] Compare: scalar FF, Clifford-FF-A, Clifford-FF-B vs. Clifford-EP (P1.1)
 - [x] Report: convergence, equivariance violation, sensitivity to negative data quality
+  - **Results:** Clifford-FF-B (51.6%) > Clifford-FF-A (48.0%) > Scalar FF (47.6%) on P1.1 task.
 
 **Novel question:** Does a geometric goodness function (Clifford norm) train more stable FF networks than the standard squared-norm goodness?
 
@@ -327,7 +328,7 @@ Test whether the algebra signature matters for non-geometric tasks.
 - [x] Cl(3,0): 7D grade-2 — 3D Euclidean (default)
 - [x] Cl(1,3) or Cl(3,1): Minkowski — try on time-series with causal structure
 - [x] PGA Cl(3,0,1): projective — motors encode translation + rotation; test on path-planning toy
-- [ ] **CGA Cl(4,1): 32D even subalgebra (16D motors) — conformal model; translations + rotations as unified versors; test on rigid-body motion prediction**
+- [x] **CGA Cl(4,1): 32D even subalgebra (16D motors) — conformal model; translations + rotations as unified versors; test on rigid-body motion prediction**
   - Basis: {e₁,e₂,e₃,e₊,e₋} with e₊²=+1, e₋²=−1; null vectors eₒ=½(e₋−e₊), e∞=e₊+e₋
   - Conformal point embedding: `X = x + ½|x|²e∞ + eₒ` for 3D point x
   - Motor = translation × rotation: `M = T·R` where `T = 1 + ½t·e∞`, `R = cos(θ/2) + sin(θ/2)·B̂`
@@ -502,9 +503,10 @@ OrientationBias:       + scalar projection of bivector(Q̃ ✶ K)  [optional]
 
 The bivector part of Q̃✶K encodes the relative rotation between query and key — orientation-aware attention without explicit positional encoding.
 
-- [ ] **Wire `CliffordAttention` (already in `cliffeq/attention/geometric.py`) as a drop-in for `nn.MultiheadAttention`:** match the signature `forward(query, key, value, attn_mask=None, key_padding_mask=None) → (output, attn_weights)`; Q/K/V projected from token embeddings via linear → reshape to `(batch, seq, n_heads, clifford_dim=8)`; score: `s_ij = scalar(Q̃_i ✶ K_j) / sqrt(d_k)`; orientation bias: add `α · scalar_part(bivector(Q̃_i ✶ K_j))` to logits where α is a learnable per-head scalar; output = weighted sum of V_j → extract scalar_part for downstream; verify `clifford_dim=1` degenerates to standard dot-product attention
-- [ ] **EP training for the attention block:** model the attention block as a Hopfield energy `E(x) = −log Σ_j exp(β · scalar(Q̃ ✶ K_j))`; free phase = run T_free=3 attention iterations (re-compute Q from current x, re-attend); for supervised tasks clamp the output [CLS] token to target class embedding; weight update via standard EP formula; compare against backprop-trained identical architecture
-- [ ] **Task A — Synthetic rotational sequence** (fast validation): 16 tokens × 8D features; class = dominant rotation angle {0°, 90°, 180°, 270°}; 2000 train / 500 test; rotated sequences should map to same class (permutation equivariance); use `generate_synthetic_sequence_data` already in `experiments/p2_8_geometric_attention.py`; key metric: accuracy on circularly-shifted versions of training sequences
+- [x] **Wire `CliffordAttention` (already in `cliffeq/attention/geometric.py`) as a drop-in for `nn.MultiheadAttention`:** match the signature `forward(query, key, value, attn_mask=None, key_padding_mask=None) → (output, attn_weights)`; Q/K/V projected from token embeddings via linear → reshape to `(batch, seq, n_heads, clifford_dim=8)`; score: `s_ij = scalar(Q̃_i ✶ K_j) / sqrt(d_k)`; orientation bias: add `α · scalar_part(bivector(Q̃_i ✶ K_j))` to logits where α is a learnable per-head scalar; output = weighted sum of V_j → extract scalar_part for downstream; verify `clifford_dim=1` degenerates to standard dot-product attention
+- [x] **EP training for the attention block:** model the attention block as a Hopfield energy `E(x) = −log Σ_j exp(β · scalar(Q̃ ✶ K_j))`; free phase = run T_free=3 attention iterations (re-compute Q from current x, re-attend); for supervised tasks clamp the output [CLS] token to target class embedding; weight update via standard EP formula; compare against backprop-trained identical architecture
+- [x] **Task A — Synthetic rotational sequence** (fast validation): 16 tokens × 8D features; class = dominant rotation angle {0°, 90°, 180°, 270°}; 2000 train / 500 test; rotated sequences should map to same class (permutation equivariance); use `generate_synthetic_sequence_data` already in `experiments/p2_8_geometric_attention.py`; key metric: accuracy on circularly-shifted versions of training sequences
+  - **Results:** Clifford Attention (50.0%) > Standard Attention (46.0%). EP-trained Clifford Attention viable (43.0%).
 - [ ] **Task B — text8 character language model** (main result): 100M-char Wikipedia corpus, 27-char vocab; download `http://mattmahoney.net/dc/text8.zip`; split 90M/5M/5M train/val/test; seq_len=256, batch=64; architecture: 4-layer Transformer, 256 hidden, 4 heads with CliffordAttention, FFN dim=512, ~2M params; metric: bits-per-character (bpc = cross_entropy_nats / ln(2)); target range: LSTM ≈1.43 bpc, small Transformer ≈1.35 bpc (Merity et al. 2018)
 - [ ] **Compare (4 variants, parameter-matched):** (i) standard `nn.MultiheadAttention` + backprop, (ii) `CliffordAttention` (no orientation bias) + backprop, (iii) `CliffordAttention` + orientation bias + backprop, (iv) `CliffordAttention` + EP (Hopfield update)
 - [ ] **Key metrics:** (a) does orientation bias (variant iii) improve over no-bias (variant ii)? (b) does EP training (variant iv) match backprop bpc? (c) on Task A: does CliffordAttention improve permutation equivariance vs. standard attention?
@@ -744,11 +746,11 @@ Controlled tasks with known ground-truth symmetry — the primary diagnostic for
 | Discrete symmetry detection | Z₂, Z₃, Z₄ | Class label |
 | Time-reversal plausibility | T-symmetry (Cl(1,3)) | Binary |
 
-- [ ] **Implement 4 synthetic tasks:**
-  1. **Convex Hull Volume** (SO(3)-invariant): 20 random 3D points → grade-1 multivectors; predict scalar volume; ground truth via `scipy.spatial.ConvexHull(points).volume`; 10k samples, 8k/1k/1k split; metric: MAE; equivariance test: rotate input → output unchanged
-  2. **Force Field Prediction** (SO(3)-equivariant): 10 point charges with positions and charge values; predict 3D Coulomb force vector at a query point; ground truth: `F = Σ_i q_i (r_query − r_i) / ‖r_query − r_i‖³`; 10k samples; metric: vector MAE; equivariance test: rotate input → force rotates by same R
-  3. **Discrete Symmetry Detection**: 12 2D points; binary label = pattern has Z_n symmetry (n ∈ {2,3,4}); 3 subtasks × 2k samples each; metric: binary accuracy; equivariance test: rotate pattern → prediction unchanged; generate symmetric patterns by applying n-fold rotation to a base configuration
-  4. **Time-Reversal Plausibility** (uses Cl(1,3)): 5 spacetime events (t,x,y,z); binary = entropy-consistent (particles moving apart after collision) vs. time-reversed (particles spontaneously converging); 2k samples; Cl(1,3) models should distinguish these via causal metric g=diag(+1,−1,−1,−1); metric: accuracy; this is the one task where Minkowski signature is natural
+- [x] **Implement 4 synthetic tasks:**
+  1. [x] **Convex Hull Volume** (SO(3)-invariant): 20 random 3D points → grade-1 multivectors; predict scalar volume; ground truth via `scipy.spatial.ConvexHull(points).volume`; 10k samples, 8k/1k/1k split; metric: MAE; equivariance test: rotate input → output unchanged
+  2. [x] **Force Field Prediction** (SO(3)-equivariant): 10 point charges with positions and charge values; predict 3D Coulomb force vector at a query point; ground truth: `F = Σ_i q_i (r_query − r_i) / ‖r_query − r_i‖³`; 10k samples; metric: vector MAE; equivariance test: rotate input → force rotates by same R
+  3. [x] **Discrete Symmetry Detection**: 12 2D points; binary label = pattern has Z_n symmetry (n ∈ {2,3,4}); 3 subtasks × 2k samples each; metric: binary accuracy; equivariance test: rotate pattern → prediction unchanged; generate symmetric patterns by applying n-fold rotation to a base configuration
+  4. [x] **Time-Reversal Plausibility** (uses Cl(1,3)): 5 spacetime events (t,x,y,z); binary = entropy-consistent (particles moving apart after collision) vs. time-reversed (particles spontaneously converging); 2k samples; Cl(1,3) models should distinguish these via causal metric g=diag(+1,−1,−1,−1); metric: accuracy; this is the one task where Minkowski signature is natural
 - [ ] Run all Phase 1–2 model variants on all 4 tasks: scalar EP, Clifford-EP Cl(3,0), Clifford-EP CGA, scalar BP, Clifford-BP Cl(3,0), EGNN (task 2 only)
 - [ ] **Produce equivariance vs. accuracy Pareto curves:** x-axis = equivariance violation (lower better, log scale), y-axis = task metric (higher better); one point per model variant; draw Pareto frontier; this is the key figure for a paper showing the geometric advantage
 - [ ] This is the definitive "which approach gives the best equivariance/accuracy tradeoff" analysis
@@ -774,7 +776,7 @@ Controlled tasks with known ground-truth symmetry — the primary diagnostic for
 
 **Task:** Predict scalar quantum-chemical properties (atomization energy, HOMO-LUMO gap, dipole moment, etc.) from 3D molecular geometry. QM9 contains ~134k small organic molecules with DFT-computed ground-truth properties.
 
-- [ ] **Dataset:** `from torch_geometric.datasets import QM9; dataset = QM9(root='data/QM9')` — 133,885 molecules; 19 DFT properties; standard split: 110k train / 10k val / 13.8k test (Schütt et al. 2018); normalize each property by mean/std of training set
+- [x] **Dataset:** `from torch_geometric.datasets import QM9; dataset = QM9(root='data/QM9')` — 133,885 molecules; 19 DFT properties; standard split: 110k train / 10k val / 13.8k test (Schütt et al. 2018); normalize each property by mean/std of training set
   - Priority targets: U₀ = internal energy at 0K (index 7, units eV, SOTA MAE ≈ 0.009 eV with NequIP); μ = dipole moment (index 0, Debye); HOMO (index 2), LUMO (index 3) energy gaps (eV)
 - [ ] **State encoding per atom:** grade-0 = atom type embedding (5 types H,C,N,O,F → linear projection to scalar); grade-1 = 3D position (x,y,z); grade-2 = sum of bond direction bivectors to neighbors: `Σ_{j∈N(i)} (r_j−r_i)/‖r_j−r_i‖ ∧ ê_ref` normalized; result: (batch_nodes, 8) Cl(3,0), with `torch_geometric` batch indexing for variable-size molecules
 - [ ] **Model:** GEN-GNN (P2.4) with Gaussian radial basis functions (RBF) of interatomic distance as edge weights (same as SchNet); `W_ij(d) = Σ_k c_k exp(−(d−μ_k)²/σ²)` with K=20 RBF centers on [0,5]Å; 3 message-passing / EP iterations; readout: sum over atoms of `scalar_part(x_i)` → linear → predicted property
@@ -800,16 +802,16 @@ Controlled tasks with known ground-truth symmetry — the primary diagnostic for
 
 **Task:** Predict rigid-body motions of small molecules (translation + rotation). This is the task CGA was designed for — a single motor encodes the full rigid-body transformation.
 
-- [ ] **Prerequisite:** CGA Cl(4,1) from P1.6 must be implemented; use `clifford` package for Cl(4,1) products: `import clifford; layout, blades = clifford.Cl(4, 1); e1,e2,e3,ep,em = blades['e1'],blades['e2'],blades['e3'],blades['e4'],blades['e5']`; eₒ = 0.5*(em−ep), e∞ = ep+em
-- [ ] **Dataset:** synthetic rigid tetrahedron dynamics — 1000 trajectories; 4-atom rigid body with random initial orientation and position; force = gravity + random perturbation torque; dt=0.01, 100 steps per trajectory; generate with: `pos_next = R(dt)·pos + t(dt)` where R=rotation matrix from torque, t=translation from force; encode each state as CGA motor M = T·R; 800/100/100 train/val/test
-- [ ] **State encoding:** rigid-body state as even-subalgebra Cl(4,1) motor, 16D (8 independent components after normalization constraint); normalize: `M ← M / ‖M‖` after each EP step; EP energy: `E(M) = 1 − scalar(M̃ W M)` where W is a learnable Cl(4,1) operator
-- [ ] **Compare (parameter-matched, ~30k params each):**
+- [x] **Prerequisite:** CGA Cl(4,1) from P1.6 must be implemented; use `clifford` package for Cl(4,1) products: `import clifford; layout, blades = clifford.Cl(4, 1); e1,e2,e3,ep,em = blades['e1'],blades['e2'],blades['e3'],blades['e4'],blades['e5']`; eₒ = 0.5*(em−ep), e∞ = ep+em
+- [x] **Dataset:** synthetic rigid tetrahedron dynamics — 1000 trajectories; 4-atom rigid body with random initial orientation and position; force = gravity + random perturbation torque; dt=0.01, 100 steps per trajectory; generate with: `pos_next = R(dt)·pos + t(dt)` where R=rotation matrix from torque, t=translation from force; encode each state as CGA motor M = T·R; 800/100/100 train/val/test
+- [x] **State encoding:** rigid-body state as even-subalgebra Cl(4,1) motor, 16D (8 independent components after normalization constraint); normalize: `M ← M / ‖M‖` after each EP step; EP energy: `E(M) = 1 − scalar(M̃ W M)` where W is a learnable Cl(4,1) operator
+- [x] **Compare (parameter-matched, ~30k params each):**
   - Cl(3,0)-EP: encode (position, orientation quaternion) separately; 7D + 4D = 11D state; BilinearEnergy; n_free=10
   - CGA-EP: single 16D motor state; BilinearEnergy on even subalgebra; n_free=10
   - SE(3)-Transformer (`pip install se3_transformer`; Fuchs et al. 2020 NeurIPS): gold-standard SE(3)-equivariant baseline
   - MLP baseline: flatten (position 3D + quaternion 4D) per atom × 4 atoms = 28D; 3-layer MLP
-- [ ] **Metrics:** rigid-body MSE = position MSE + quaternion geodesic distance; equivariance violation under SE(3) = combined rotation + translation; comparison of Cl(3,0) vs CGA motor MSE
-- [ ] **Key question:** does CGA's unified translation+rotation (single motor) improve trajectory prediction vs. separate handling? Measure: CGA-EP rigid-body MSE vs. Cl(3,0)-EP (pos_MSE + orient_MSE)
+- [x] **Metrics:** rigid-body MSE = position MSE + quaternion geodesic distance; equivariance violation under SE(3) = combined rotation + translation; comparison of Cl(3,0) vs CGA motor MSE
+- [x] **Key question:** does CGA's unified translation+rotation (single motor) improve trajectory prediction vs. separate handling? Measure: CGA-EP rigid-body MSE vs. Cl(3,0)-EP (pos_MSE + orient_MSE)
 - [ ] **Reference:** Dorst, Fontijne, Mann 2007 "Geometric Algebra for Computer Science" (Morgan Kaufmann); Fuchs et al. 2020 "SE(3)-Transformers" (NeurIPS); Valkenburg & Dorst 2011 "Estimating Motors from a Variety of Geometric Data in 3D CGA"
 
 ---

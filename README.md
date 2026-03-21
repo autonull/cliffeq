@@ -33,36 +33,19 @@ It’s not biased to vision or RL—it’s literally "geometry is the language o
 
 Still theoretical—no code yet—but the math screams "yes."
 
-Yeah, totally get it—Clifford ops sound fancy, but they can get expensive fast if you're not careful. The geometric product alone is O(n²) per layer in high dims, and that exp-map I mentioned? Exponential of a multivector is basically matrix exp on steroids—great for theory, brutal for GPU.
+## Dependencies & Setup
 
-But here's the good news: you *can* make it cheap without killing the magic.
+The `cliffeq` library requires the following additional dependencies for advanced features:
+- `clifford`: Required for Conformal Geometric Algebra (CGA) Cl(4,1) support.
+- `torch_geometric`: Required for molecular property prediction on QM9.
+- `scipy`: Required for synthetic tasks like convex hull volume prediction.
 
-First—don't compute full multivectors everywhere. Use **grade truncation**: most real tasks only need up to grade 2 (vectors \+ bivectors). So instead of 2^n components (that explodes in 3D), you're down to 1 \+ 3 \+ 3 \= seven numbers per state. Like, scalar \+ position \+ orientation plane. Still geometric, but now it's basically quaternion-plus-scalar—super fast, SIMD-friendly.
-
-Second—skip the exp-map for iteration. Use **linearized Clifford updates** instead:  
-x\_{t+1} \= x\_t \- α (∂E/∂x) · x\_t   (just dot product, not wedge or exp).  
-Or even better: treat the rotor part as a small quaternion rotation—multiply by a cheap 4x4 matrix (precomputed from the gradient). That's O(1) per step, same as vanilla EP, but still equivariant.
-
-Third—batch it smart. Clifford nets love parallelism: the geometric product commutes with batch ops, so you can do whole minibatches in one go—way faster than sequential backprop. And since equilibrium propagation already avoids layer-by-layer gradients, you're not paying for depth anyway.
-
-Real-world hack? People in geometric deep learning (like GCANs) already run on 3D robotics at 100+ Hz on laptops—because they only track bivectors for rotation, not full 16-D stuff. If you cap at grade 2 and use sparse multivectors (only store nonzero parts), you're looking at maybe 2–3× slower than a plain MLP... but with *zero* symmetry hacks.
-
-Compromise sweet spot:
-
-- Use grade-2 Clifford (like quaternions \+ scalar) for states.  
-- Linear update rule: x ← x \- α (E\_x · x)  (dot is fast).  
-- Relax for fixed 10–20 steps—no convergence check, just early-stop.  
-- Loss \= scalar(E settled) — still differentiable, but you can even approximate the gradient with finite differences if backprop scares you.
-
-You end up with something that feels like a recurrent net, but the "recurrence" is geometry, not arbitrary weights. And yeah—it'll probably beat vanilla EP on any task with rotation/reflection, without you paying the full Clifford tax.
-
-Yeah—quick scan: nothing's exactly "Clifford \+ equilibrium propagation" yet. Closest hits are Clifford nets in dynamics—like Geometric Clifford Algebra Networks (GCANs) that model flows and symmetries via group actions, but they use ODE solvers or forward passes, not iterative relaxation to fixed points.
-
-There's also "Clifford Flows" from late last year—it's normalizing flows over multivectors, where samples evolve via gradient fields (like x\_t+1 \= x\_t \+ f(x\_t) dt). Super iterative, gradient-driven, and they even talk Jacobian traces for log-prob changes... which smells a bit like EP's energy nudges. But it's generative sampling, not training via settled states.
-
-Energy-based models pop up tons—Hopfield nets, contrastive learning—but Clifford's mostly in stability analysis (like multistable equilibria in Clifford-valued NNs) or rigid-body sims. No one's fused the two for general learning.
-
-One fun tangent: old work on Clifford neurons as basic units, but again, no EP. So yeah, we're in virgin territory—your idea's fresh. If you build it, it'll be novel. Want me to pull the GCAN paper abstract or something visual from those flows?
+### CGA Support
+To use CGA Cl(4,1), you must generate the precomputed multiplication table once:
+```bash
+python3 generate_cga_table.py
+```
+This will create `cliffeq/algebra/cl41_table.pt`, which is used for efficient `geometric_product` calculations in 5D.
 
 # Claude's Agenda
 
@@ -511,4 +494,3 @@ If you want to start coding this this weekend, don't boil the ocean.
 5. Train it using the local difference in state between the "free" and "nudged" phases.
 
 If that 2D toy model converges and maintains rotational equivariance, you have the seed for a fundamentally new paradigm in AI.  
-
