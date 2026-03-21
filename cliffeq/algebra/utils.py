@@ -60,30 +60,20 @@ def geometric_product(x, y, g):
         # Elementwise geometric product (B, N, I) * (B, N, I) -> (B, N, I)
         B, N, I_x = x.shape
         assert I_x == I
+        BN = B * N
 
-        # Reshape x and y for iteration
-        x_flat = x.reshape(B * N, I)  # (BN, I)
-        y_flat = y.reshape(B * N, I)  # (BN, I)
+        # Reshape x and y for vectorized kernel application
+        # W must be (I, Nout, Nin) = (I, BN, 1)
+        W = y.reshape(BN, I).t().unsqueeze(-1)
+        res = kernel_fn(W, sig.g)
+        kernel_all = res[1] if isinstance(res, tuple) else res
+        # kernel_all is (BN*I, I), needs reshape to (BN, I, I)
+        # Verified that .view(I, BN, I).permute(1, 0, 2) is correct
+        kernels = kernel_all.reshape(I, BN, I).permute(1, 0, 2)
 
-        # For each batch element, compute the geometric product using the kernel
-        # This avoids the batching issue where kernel_fn interprets BN as output channels
-        out_list = []
-        for i in range(B * N):
-            # Get y as a weight multivector: (I, 1, 1)
-            y_i = y_flat[i]  # (I,)
-            w_i = y_i.view(I, 1, 1)
-
-            # Get kernel for this y_i
-            res_i = kernel_fn(w_i, sig.g)
-            kernel_i = res_i[1] if isinstance(res_i, tuple) else res_i  # (I, I)
-
-            # Apply kernel to x_i
-            x_i = x_flat[i]  # (I,)
-            out_i = torch.matmul(kernel_i, x_i)  # (I,)
-            out_list.append(out_i)
-
-        out_flat = torch.stack(out_list)  # (BN, I)
-        return out_flat.view(B, N, I)
+        x_flat = x.reshape(BN, I)
+        out_flat = torch.einsum("bij,bj->bi", kernels, x_flat)
+        return out_flat.reshape(B, N, I)
 
     else:
         raise NotImplementedError(f"Geometric product for shapes {x.shape} and {y.shape} not implemented")

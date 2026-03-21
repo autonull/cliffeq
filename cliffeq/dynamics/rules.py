@@ -98,17 +98,20 @@ class GradeSplit(DynamicsRule):
     def __init__(self, alphas_per_grade):
         self.alphas = alphas_per_grade
     def step(self, x, energy_fn, alpha) -> torch.Tensor:
-        sig = CliffordSignature(energy_fn.g if hasattr(energy_fn, 'g') else torch.tensor([1.0, 1.0, 1.0]))
         x_in = x.detach().requires_grad_(True)
         with torch.enable_grad():
             E = energy_fn(x_in).sum()
             grad = torch.autograd.grad(E, x_in)[0]
-        if sig.dim == 3:
+
+        I = x.shape[-1]
+        if I == 8:
             blade_grades = [0, 1, 1, 1, 2, 2, 2, 3]
-        elif sig.dim == 2:
+        elif I == 4:
             blade_grades = [0, 1, 1, 2]
-        else:
+        elif I == 2:
             blade_grades = [0, 1]
+        else:
+            blade_grades = [0] * I # Fallback
         update = torch.zeros_like(grad)
         for i, grade in enumerate(blade_grades):
             a = self.alphas.get(grade, alpha)

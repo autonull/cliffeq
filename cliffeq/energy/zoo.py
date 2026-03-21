@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from cliffeq.energy.base import EnergyFunction
-from cliffeq.algebra.utils import geometric_product, scalar_part, clifford_norm_sq
+from cliffeq.algebra.utils import geometric_product, scalar_part, clifford_norm_sq, reverse, get_blade_signs
 from cliffordlayers.signature import CliffordSignature
 
 class NormEnergy(EnergyFunction):
@@ -33,9 +33,13 @@ class BilinearEnergy(EnergyFunction):
 
     def forward(self, h: torch.Tensor) -> torch.Tensor:
         # E = 0.5 * ||h||^2 - scalar(h̃ W x)
+        # scalar(h̃ Wx) = Σ_i signs_i * h_i * (Wx)_i
         E_norm = 0.5 * torch.sum(h**2, dim=(-1, -2))
         Wx = geometric_product(self.input_x, self.W, self.g)
-        E_int = torch.sum(h * Wx, dim=(-1, -2))
+
+        signs = get_blade_signs(self.sig, h.device)
+        # h: (B, N_h, I), Wx: (B, N_h, I), signs: (I,)
+        E_int = torch.einsum("bni,bni,i->b", h, Wx, signs)
         return E_norm - E_int
 
 class GraphEnergy(EnergyFunction):
@@ -50,7 +54,8 @@ class GraphEnergy(EnergyFunction):
         # E = Σ_{ij} scalar(x̃_i W_ij x_j)
         # x: (B, N, I)
         Wx = geometric_product(x, self.W, self.g) # (B, N, I)
-        return torch.sum(x * Wx, dim=(-1, -2))
+        signs = get_blade_signs(self.sig, x.device)
+        return torch.einsum("bni,bni,i->b", x, Wx, signs)
 
 class GradeWeightedEnergy(EnergyFunction):
     def __init__(self, nodes, sig_g, lambdas=None, use_spectral_norm: bool = False):
