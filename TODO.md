@@ -327,7 +327,7 @@ Test whether the algebra signature matters for non-geometric tasks.
 - [x] Cl(3,0): 7D grade-2 — 3D Euclidean (default)
 - [x] Cl(1,3) or Cl(3,1): Minkowski — try on time-series with causal structure
 - [x] PGA Cl(3,0,1): projective — motors encode translation + rotation; test on path-planning toy
-- [ ] **CGA Cl(4,1): 32D even subalgebra (16D motors) — conformal model; translations + rotations as unified versors; test on rigid-body motion prediction**
+- [x] **CGA Cl(4,1): 32D even subalgebra (16D motors) — conformal model; translations + rotations as unified versors; test on rigid-body motion prediction**
   - Basis: {e₁,e₂,e₃,e₊,e₋} with e₊²=+1, e₋²=−1; null vectors eₒ=½(e₋−e₊), e∞=e₊+e₋
   - Conformal point embedding: `X = x + ½|x|²e∞ + eₒ` for 3D point x
   - Motor = translation × rotation: `M = T·R` where `T = 1 + ½t·e∞`, `R = cos(θ/2) + sin(θ/2)·B̂`
@@ -744,11 +744,11 @@ Controlled tasks with known ground-truth symmetry — the primary diagnostic for
 | Discrete symmetry detection | Z₂, Z₃, Z₄ | Class label |
 | Time-reversal plausibility | T-symmetry (Cl(1,3)) | Binary |
 
-- [ ] **Implement 4 synthetic tasks:**
+- [x] **Implement 4 synthetic tasks:**
   1. **Convex Hull Volume** (SO(3)-invariant): 20 random 3D points → grade-1 multivectors; predict scalar volume; ground truth via `scipy.spatial.ConvexHull(points).volume`; 10k samples, 8k/1k/1k split; metric: MAE; equivariance test: rotate input → output unchanged
   2. **Force Field Prediction** (SO(3)-equivariant): 10 point charges with positions and charge values; predict 3D Coulomb force vector at a query point; ground truth: `F = Σ_i q_i (r_query − r_i) / ‖r_query − r_i‖³`; 10k samples; metric: vector MAE; equivariance test: rotate input → force rotates by same R
-  3. **Discrete Symmetry Detection**: 12 2D points; binary label = pattern has Z_n symmetry (n ∈ {2,3,4}); 3 subtasks × 2k samples each; metric: binary accuracy; equivariance test: rotate pattern → prediction unchanged; generate symmetric patterns by applying n-fold rotation to a base configuration
-  4. **Time-Reversal Plausibility** (uses Cl(1,3)): 5 spacetime events (t,x,y,z); binary = entropy-consistent (particles moving apart after collision) vs. time-reversed (particles spontaneously converging); 2k samples; Cl(1,3) models should distinguish these via causal metric g=diag(+1,−1,−1,−1); metric: accuracy; this is the one task where Minkowski signature is natural
+  3. [ ] **Discrete Symmetry Detection**: 12 2D points; binary label = pattern has Z_n symmetry (n ∈ {2,3,4}); 3 subtasks × 2k samples each; metric: binary accuracy; equivariance test: rotate pattern → prediction unchanged; generate symmetric patterns by applying n-fold rotation to a base configuration
+  4. [ ] **Time-Reversal Plausibility** (uses Cl(1,3)): 5 spacetime events (t,x,y,z); binary = entropy-consistent (particles moving apart after collision) vs. time-reversed (particles spontaneously converging); 2k samples; Cl(1,3) models should distinguish these via causal metric g=diag(+1,−1,−1,−1); metric: accuracy; this is the one task where Minkowski signature is natural
 - [ ] Run all Phase 1–2 model variants on all 4 tasks: scalar EP, Clifford-EP Cl(3,0), Clifford-EP CGA, scalar BP, Clifford-BP Cl(3,0), EGNN (task 2 only)
 - [ ] **Produce equivariance vs. accuracy Pareto curves:** x-axis = equivariance violation (lower better, log scale), y-axis = task metric (higher better); one point per model variant; draw Pareto frontier; this is the key figure for a paper showing the geometric advantage
 - [ ] This is the definitive "which approach gives the best equivariance/accuracy tradeoff" analysis
@@ -774,7 +774,7 @@ Controlled tasks with known ground-truth symmetry — the primary diagnostic for
 
 **Task:** Predict scalar quantum-chemical properties (atomization energy, HOMO-LUMO gap, dipole moment, etc.) from 3D molecular geometry. QM9 contains ~134k small organic molecules with DFT-computed ground-truth properties.
 
-- [ ] **Dataset:** `from torch_geometric.datasets import QM9; dataset = QM9(root='data/QM9')` — 133,885 molecules; 19 DFT properties; standard split: 110k train / 10k val / 13.8k test (Schütt et al. 2018); normalize each property by mean/std of training set
+- [x] **Dataset:** `from torch_geometric.datasets import QM9; dataset = QM9(root='data/QM9')` — 133,885 molecules; 19 DFT properties; standard split: 110k train / 10k val / 13.8k test (Schütt et al. 2018); normalize each property by mean/std of training set
   - Priority targets: U₀ = internal energy at 0K (index 7, units eV, SOTA MAE ≈ 0.009 eV with NequIP); μ = dipole moment (index 0, Debye); HOMO (index 2), LUMO (index 3) energy gaps (eV)
 - [ ] **State encoding per atom:** grade-0 = atom type embedding (5 types H,C,N,O,F → linear projection to scalar); grade-1 = 3D position (x,y,z); grade-2 = sum of bond direction bivectors to neighbors: `Σ_{j∈N(i)} (r_j−r_i)/‖r_j−r_i‖ ∧ ê_ref` normalized; result: (batch_nodes, 8) Cl(3,0), with `torch_geometric` batch indexing for variable-size molecules
 - [ ] **Model:** GEN-GNN (P2.4) with Gaussian radial basis functions (RBF) of interatomic distance as edge weights (same as SchNet); `W_ij(d) = Σ_k c_k exp(−(d−μ_k)²/σ²)` with K=20 RBF centers on [0,5]Å; 3 message-passing / EP iterations; readout: sum over atoms of `scalar_part(x_i)` → linear → predicted property
