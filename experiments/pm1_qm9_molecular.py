@@ -10,15 +10,16 @@ from cliffeq.algebra.utils import embed_vector, scalar_part, geometric_product
 from cliffordlayers.signature import CliffordSignature
 import time
 import os
+import json
 
 # 1. QM9 Molecular Property Prediction (U0)
 
 def load_qm9(root='data/QM9'):
     dataset = QM9(root=root)
     # Target index 7 is U0
-    # Split: 1000 train / 200 val for speed in this PoC
-    train_dataset = dataset[:1000]
-    test_dataset = dataset[1000:1200]
+    # Split: 500 train / 100 val for speed in this PoC
+    train_dataset = dataset[:500]
+    test_dataset = dataset[500:600]
     return train_dataset, test_dataset
 
 # 2. Model: Clifford-EP GNN Node
@@ -133,7 +134,13 @@ def run_pm1():
             target = batch.y[:, 7].view(-1, 1)
             mae += torch.abs(graph_preds - target).sum().item()
 
-    print(f"Final MAE on U0: {mae / len(test_data):.6f} eV")
+    final_mae = mae / len(test_data)
+    print(f"Final MAE on U0: {final_mae:.6f} eV")
+
+    results = {"status": "success", "mae": final_mae}
+    os.makedirs("results", exist_ok=True)
+    with open("results/pm1_results.json", "w") as f:
+        json.dump(results, f)
 
 if __name__ == "__main__":
     run_pm1()
