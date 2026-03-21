@@ -64,9 +64,12 @@ class ResNet18WithBottleneck(nn.Module):
                 step_size=0.01,
                 use_spectral_norm=True
             )
-            feature_dim = bottleneck_dim
+            # Project back to 64 channels to match ResNet's layer1 input
+            self.bottleneck_project = nn.Linear(bottleneck_dim, 64)
+            feature_dim = 64
         else:
             self.bottleneck = None
+            self.bottleneck_project = None
             feature_dim = 64
 
         # Residual layers (adjusted for bottleneck output dimension)
@@ -86,13 +89,16 @@ class ResNet18WithBottleneck(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)      # (B, 64, 16, 16)
 
-        # Apply bottleneck if enabled
+        # Apply bottleneck if enabled (apply per-spatial-location)
         if self.bottleneck is not None:
             B, C, H, W = x.shape
-            x_flat = x.view(B, -1)  # (B, 64*16*16)
-            x_bottleneck = self.bottleneck(x_flat)  # (B, bottleneck_dim)
-            # Reshape back: expand to match spatial dimensions
-            x = x_bottleneck.view(B, -1, 1, 1).expand(B, -1, H, W)
+            # Reshape to (B*H*W, C) to apply bottleneck to each spatial location
+            x_reshaped = x.permute(0, 2, 3, 1).reshape(B * H * W, C)  # (B*H*W, 64)
+            x_bottleneck = self.bottleneck(x_reshaped)  # (B*H*W, bottleneck_dim)
+            # Project back to 64 channels
+            x_projected = self.bottleneck_project(x_bottleneck)  # (B*H*W, 64)
+            # Reshape back to (B, 64, H, W)
+            x = x_projected.view(B, H, W, -1).permute(0, 3, 1, 2)  # (B, 64, H, W)
 
         # Residual layers
         x = self.layer1(x)
