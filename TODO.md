@@ -127,26 +127,26 @@ Build these before any PoC. Do not over-engineer — implement exactly what the 
 ### F1: Clifford Algebra Utilities
 Thin wrapper on `cliffordlayers` standardizing tensor contract `(batch, nodes, components)`.
 
-- [ ] Cl(2,0): 4D. Cl(3,0) grade-2 truncated: 7D. Cl(3,0) full: 8D. Cl(1,3): 16D.
-- [ ] `grade_project(x, grades)` — zero out all but listed grades
-- [ ] `reverse(x)` — negate grades 2 and 3
-- [ ] `clifford_norm_sq(x)` — scalar part of x̃x
-- [ ] `scalar_part(x)`, `vector_part(x)`, `bivector_part(x)` — grade extraction
-- [ ] Geometric, inner, and outer products (delegate to `cliffordlayers`)
-- [ ] `embed_scalar(x)` / `embed_vector(x)` — lift real tensors into multivector grade slots
+- [x] Cl(2,0): 4D. Cl(3,0) grade-2 truncated: 7D. Cl(3,0) full: 8D. Cl(1,3): 16D.
+- [x] `grade_project(x, grades)` — zero out all but listed grades
+- [x] `reverse(x)` — negate grades 2 and 3
+- [x] `clifford_norm_sq(x)` — scalar part of x̃x
+- [x] `scalar_part(x)`, `vector_part(x)`, `bivector_part(x)` — grade extraction
+- [x] Geometric, inner, and outer products (delegate to `cliffordlayers`)
+- [x] `embed_scalar(x)` / `embed_vector(x)` — lift real tensors into multivector grade slots
 
 ### F2: Energy Function Base + Spectral Norm
 
-- [ ] `EnergyFunction(state, weights) -> scalar` abstract base
-- [ ] `use_spectral_norm: bool` flag — wraps internal weight matrices with `torch.nn.utils.spectral_norm` when True
-- [ ] Log largest singular value (effective Lipschitz constant) during training when SN active
-- [ ] All concrete energy functions inherit this base (see P2.1)
+- [x] `EnergyFunction(state, weights) -> scalar` abstract base
+- [x] `use_spectral_norm: bool` flag — wraps internal weight matrices with `torch.nn.utils.spectral_norm` when True
+- [x] Log largest singular value (effective Lipschitz constant) during training when SN active
+- [x] All concrete energy functions inherit this base (see P2.1)
 
 ### F3: Update Dynamics Base
 
-- [ ] `DynamicsRule.step(x, energy_fn, alpha) -> x_new` abstract interface
-- [ ] All 7 Axis C rules as concrete subclasses (see P1.2)
-- [ ] All rules: differentiable w.r.t. `x` (needed for EP gradient via autograd), shape-preserving
+- [x] `DynamicsRule.step(x, energy_fn, alpha) -> x_new` abstract interface
+- [x] All 7 Axis C rules as concrete subclasses (see P1.2)
+- [x] All rules: differentiable w.r.t. `x` (needed for EP gradient via autograd), shape-preserving
 
 ### F4: EP Engine Adapter
 
@@ -157,9 +157,9 @@ Clamped:      x** = relax(E + β·L(scalar(x), target), x*, n_clamped steps)
 ΔW ∝ (1/β)·[∂E(x*)/∂W − ∂E(x**)/∂W]
 ```
 
-- [ ] `EPEngine(energy_fn, dynamics_rule, n_free, n_clamped, beta, dt, use_spectral_norm)`
-- [ ] `.free_phase(x_init)` / `.clamped_phase(x_init, target)` / `.parameter_update(x_free, x_clamped)`
-- [ ] Works identically for scalar or Clifford states — the difference is only in the dynamics rule
+- [x] `EPEngine(energy_fn, dynamics_rule, n_free, n_clamped, beta, dt, use_spectral_norm)`
+- [x] `.free_phase(x_init)` / `.clamped_phase(x_init, target)` / `.parameter_update(x_free, x_clamped)`
+- [x] Works identically for scalar or Clifford states — the difference is only in the dynamics rule
 
 ### F5: Forward-Forward Engine
 
@@ -170,10 +170,10 @@ Negative pass: fake (x, y') → compute goodness G(h) → minimize
 Layer-local update: no global gradient, no backward pass
 ```
 
-- [ ] `FFEngine(goodness_fn, threshold_theta)` — layer-local training loop
-- [ ] Default goodness: `G(h) = clifford_norm_sq(h) − θ` (Clifford norm instead of ‖·‖²)
-- [ ] Alternative goodness: `G(h) = scalar_part(h̃ W h) − θ` (learnable geometric goodness)
-- [ ] Positive/negative data generation: support label-mixing, noise corruption, and adversarial negatives
+- [x] `FFEngine(goodness_fn, threshold_theta)` — layer-local training loop
+- [x] Default goodness: `G(h) = clifford_norm_sq(h) − θ` (Clifford norm instead of ‖·‖²)
+- [x] Alternative goodness: `G(h) = scalar_part(h̃ W h) − θ` (learnable geometric goodness)
+- [x] Positive/negative data generation: support label-mixing, noise corruption, and adversarial negatives
 
 ### F6: Clifford Geometric Attention Module
 
@@ -185,18 +185,18 @@ Clifford:    GeoAttention(Q,K,V) = softmax(β · scalar(Q̃ ✶ K)) V
              or richer: incorporate bivector(Q̃ ✶ K) as orientation bias
 ```
 
-- [ ] `CliffordAttention(n_heads, clifford_dim, use_orientation_bias: bool)`
-- [ ] `orientation_bias`: if True, add `bivector(Q̃ ✶ K)` projected to scalar as an additive bias to attention logits — encodes relative orientation between query and key without explicit positional encoding
-- [ ] Compatible with standard Transformer blocks as a drop-in replacement for `nn.MultiheadAttention`
-- [ ] When `clifford_dim=1` (scalar only), degenerates to standard dot-product attention
+- [x] `CliffordAttention(n_heads, clifford_dim, use_orientation_bias: bool)`
+- [x] `orientation_bias`: if True, add `bivector(Q̃ ✶ K)` projected to scalar as an additive bias to attention logits — encodes relative orientation between query and key without explicit positional encoding
+- [x] Compatible with standard Transformer blocks as a drop-in replacement for `nn.MultiheadAttention`
+- [x] When `clifford_dim=1` (scalar only), degenerates to standard dot-product attention
 
 ### F7: Metrics & Logging
 
-- [ ] `equivariance_violation(model, x, group)` — group ∈ {SO2, SO3, O3, Z2, Sn (permutation)}
-- [ ] `convergence_curve(energy_fn, dynamics, x_init, n_steps)` → energy per step
-- [ ] `fixed_point_count(energy_fn, dynamics, n_init=200)` → number of distinct attractors
-- [ ] `MetricsLogger` — wandb if configured, JSON fallback
-- [ ] Standardized `run_experiment(config)` harness logging: task metric, equivariance violation, convergence iterations, energy residual at fixed point, wall-clock, peak GPU memory
+- [x] `equivariance_violation(model, x, group)` — group ∈ {SO2, SO3, O3, Z2, Sn (permutation)}
+- [x] `convergence_curve(energy_fn, dynamics, x_init, n_steps)` → energy per step
+- [x] `fixed_point_count(energy_fn, dynamics, n_init=200)` → number of distinct attractors
+- [x] `MetricsLogger` — wandb if configured, JSON fallback
+- [x] Standardized `run_experiment(config)` harness logging: task metric, equivariance violation, convergence iterations, energy residual at fixed point, wall-clock, peak GPU memory
 
 ---
 
@@ -236,8 +236,8 @@ Quick-reference for how each training algorithm connects to the Clifford-EP fram
 
 Run each × {SN off, SN on} = 8 total configurations.
 
-- [ ] All 4 model variants, shared task loader and metrics harness (F7)
-- [ ] Report all F7 metrics; equivariance violation is the key comparative metric
+- [x] All 4 model variants, shared task loader and metrics harness (F7)
+- [x] Report all F7 metrics; equivariance violation is the key comparative metric
 
 **Success criterion:** Clifford-EP converges on every run; its equivariance violation < scalar EP's; accuracy ≥ 85%.
 **Kill switch:** If Clifford-EP fails to converge → do P2.1 (energy zoo) before proceeding.
@@ -248,9 +248,9 @@ Run each × {SN off, SN on} = 8 total configurations.
 
 **Task:** Same as P1.1. Compare all 7 Axis C dynamics rules. This is the most impactful single design decision.
 
-- [ ] All 7 rules from F3; 5 seeds each; 20 iterations max
-- [ ] Report: convergence curve, final accuracy, equivariance violation, wall-clock/iteration
-- [ ] Plot: all rules on same energy-vs-iteration graph
+- [x] All 7 rules from F3; 5 seeds each; 20 iterations max
+- [x] Report: convergence curve, final accuracy, equivariance violation, wall-clock/iteration
+- [x] Plot: all rules on same energy-vs-iteration graph
 
 **Success criterion:** At least one geometric rule achieves equivariance violation < 1e-3 without convergence regression vs. LinearDot.
 **Decision:** Whichever rule wins becomes the default for all subsequent PoCs. If LinearDot wins, note that dynamics matter less than state representation.
@@ -269,9 +269,9 @@ Run each × {SN off, SN on} = 8 total configurations.
 | G012 | 7D | Scalar + vector + bivector — proposed sweet spot |
 | G0123 | 8D | Full algebra |
 
-- [ ] All 5, same Clifford-EP (best rule from P1.2), same parameter count (pad if needed)
-- [ ] Report: accuracy, equivariance violation, convergence speed, memory
-- [ ] Plot: accuracy vs. dimensionality Pareto curve
+- [x] All 5, same Clifford-EP (best rule from P1.2), same parameter count (pad if needed)
+- [x] Report: accuracy, equivariance violation, convergence speed, memory
+- [x] Plot: accuracy vs. dimensionality Pareto curve
 
 **Success criterion:** G012 achieves ≥95% of G0123 accuracy at ≤90% wall-clock cost.
 
@@ -279,10 +279,10 @@ Run each × {SN off, SN on} = 8 total configurations.
 
 ### P1.4: Spectral Normalization Quantification
 
-- [ ] 3 conditions: no SN | SN on scalar EP | SN on Clifford-EP
-- [ ] Sweep nudge strengths β ∈ {0.01, 0.1, 0.5}
-- [ ] Track: convergence speed, energy residual oscillation, fixed-point stability
-- [ ] **Decision:** If SN reduces convergence iterations by >20% or eliminates oscillation → enable by default everywhere.
+- [x] 3 conditions: no SN | SN on scalar EP | SN on Clifford-EP
+- [x] Sweep nudge strengths β ∈ {0.01, 0.1, 0.5}
+- [x] Track: convergence speed, energy residual oscillation, fixed-point stability
+- [x] **Decision:** If SN reduces convergence iterations by >20% or eliminates oscillation → enable by default everywhere.
 
 ---
 
@@ -290,12 +290,12 @@ Run each × {SN off, SN on} = 8 total configurations.
 
 **Goal:** Hinton's FF algorithm is backprop-free, layer-local, and requires no clamped phase. Does it work with Clifford states? How does it compare to Clifford-EP?
 
-- [ ] Implement `FFEngine` (F5) with Clifford goodness functions
-- [ ] Goodness variant A: `G(h) = clifford_norm_sq(h) − θ` (Clifford norm)
-- [ ] Goodness variant B: `G(h) = scalar_part(h̃ W h) − θ` (learnable geometric goodness)
-- [ ] Negative data: label-corrupted (standard FF), noise-injected, adversarial (worst-case test)
-- [ ] Compare: scalar FF, Clifford-FF-A, Clifford-FF-B vs. Clifford-EP (P1.1)
-- [ ] Report: convergence, equivariance violation, sensitivity to negative data quality
+- [x] Implement `FFEngine` (F5) with Clifford goodness functions
+- [x] Goodness variant A: `G(h) = clifford_norm_sq(h) − θ` (Clifford norm)
+- [x] Goodness variant B: `G(h) = scalar_part(h̃ W h) − θ` (learnable geometric goodness)
+- [x] Negative data: label-corrupted (standard FF), noise-injected, adversarial (worst-case test)
+- [x] Compare: scalar FF, Clifford-FF-A, Clifford-FF-B vs. Clifford-EP (P1.1)
+- [x] Report: convergence, equivariance violation, sensitivity to negative data quality
 
 **Novel question:** Does a geometric goodness function (Clifford norm) train more stable FF networks than the standard squared-norm goodness?
 
@@ -305,10 +305,10 @@ Run each × {SN off, SN on} = 8 total configurations.
 
 Test whether the algebra signature matters for non-geometric tasks.
 
-- [ ] Cl(2,0): 4D — 2D Euclidean
-- [ ] Cl(3,0): 7D grade-2 — 3D Euclidean (default)
-- [ ] Cl(1,3) or Cl(3,1): Minkowski — try on time-series with causal structure
-- [ ] PGA Cl(3,0,1): projective — motors encode translation + rotation; test on path-planning toy
+- [x] Cl(2,0): 4D — 2D Euclidean
+- [x] Cl(3,0): 7D grade-2 — 3D Euclidean (default)
+- [x] Cl(1,3) or Cl(3,1): Minkowski — try on time-series with causal structure
+- [x] PGA Cl(3,0,1): projective — motors encode translation + rotation; test on path-planning toy
 
 Task: for each algebra, design a tiny synthetic task that exploits its natural symmetry. If Cl(1,3) doesn't help on temporal tasks, note that and move on.
 
@@ -318,10 +318,10 @@ Task: for each algebra, design a tiny synthetic task that exploits its natural s
 
 **Goal:** Establish the "CD-trained EBM" baseline before making it Clifford. This ensures we understand what CD-trained models look like on the same tasks.
 
-- [ ] Standard EBM: `E(x) = f_θ(x)` scalar energy, CD training with short Langevin chains
-- [ ] Clifford-EBM: `E(x) = scalar_part(x̃ W x)`, CD training with Clifford-Langevin
-- [ ] **Clifford-Langevin:** `x_{t+1} = x_t − α ∂E/∂x + ε` where ε is Clifford-valued noise (noise per grade)
-- [ ] Compare against Clifford-EP on P1.1 task: CD vs. EP as training algorithm for the same Clifford energy
+- [x] Standard EBM: `E(x) = f_θ(x)` scalar energy, CD training with short Langevin chains
+- [x] Clifford-EBM: `E(x) = scalar_part(x̃ W x)`, CD training with Clifford-Langevin
+- [x] **Clifford-Langevin:** `x_{t+1} = x_t − α ∂E/∂x + ε` where ε is Clifford-valued noise (noise per grade)
+- [x] Compare against Clifford-EP on P1.1 task: CD vs. EP as training algorithm for the same Clifford energy
 
 ---
 
@@ -347,10 +347,10 @@ Different energy families produce fundamentally different fixed-point landscapes
 | GradeMixingEnergy | `E = scalar(x̃ W x) + scalar(⟨x⟩₁ V ⟨x⟩₂)` | Cross-grade coupling |
 | SparseCliffordEnergy | `E = ½‖y − Ax‖² + Σ_k λ_k ‖⟨x⟩_k‖₁` | Clifford sparse coding |
 
-- [ ] Implement all 9 as `EnergyFunction` subclasses with `use_spectral_norm` flag
-- [ ] For each: characterize fixed-point landscape (attractor count, symmetry of attractors)
-- [ ] Run on P1.1; note convergence, accuracy, oscillation behavior
-- [ ] Visualize energy landscape for Cl(2,0) (2D-projectible)
+- [x] Implement all 9 as `EnergyFunction` subclasses with `use_spectral_norm` flag
+- [x] For each: characterize fixed-point landscape (attractor count, symmetry of attractors)
+- [x] Run on P1.1; note convergence, accuracy, oscillation behavior
+- [x] Visualize energy landscape for Cl(2,0) (2D-projectible)
 
 **Output:** Catalog of energy families with convergence properties — reference for all further work.
 
@@ -368,11 +368,11 @@ Dynamics: x_{t+1} = softmax(β · [scalar(ξ̃_m ✶ x)]_m) · [ξ_m]_m   (EP fr
 
 Note: this energy IS the Modern Hopfield energy with Clifford inner product. Retrieval dynamics are one step of EP.
 
-- [ ] Task: store K oriented 3D shape templates; query with noise or partial occlusion
-- [ ] **Key test:** query rotated by θ ∈ [0°, 360°] → same pattern retrieved (equivariant retrieval)
-- [ ] Capacity test: max patterns storable before retrieval degrades vs. dimension
-- [ ] Compare: scalar Hopfield, Modern Hopfield (softmax), quaternion Hopfield, Clifford-Hopfield
-- [ ] **Connection to attention:** CliffordHopfield retrieval IS CliffordAttention (F6) with patterns as keys/values
+- [x] Task: store K oriented 3D shape templates; query with noise or partial occlusion
+- [x] **Key test:** query rotated by θ ∈ [0°, 360°] → same pattern retrieved (equivariant retrieval)
+- [x] Capacity test: max patterns storable before retrieval degrades vs. dimension
+- [x] Compare: scalar Hopfield, Modern Hopfield (softmax), quaternion Hopfield, Clifford-Hopfield
+- [x] **Connection to attention:** CliffordHopfield retrieval IS CliffordAttention (F6) with patterns as keys/values
 
 **Success criterion:** Equivariant retrieval accuracy >80% for arbitrary rotation; scalar Hopfield should degrade significantly.
 
@@ -388,11 +388,11 @@ Energy:   E(q) = 1 − scalar(q̃ W q)
 Dynamics: Riemannian gradient descent on S³ (project ∇E onto tangent space, then retract)
 ```
 
-- [ ] Rotor normalization after each step: `q ← q / ‖q‖`
-- [ ] Task A: **rotation regression** — predict 3D object orientation from observation
-- [ ] Task B: **rotation composition** — given two input rotors, predict their product (tests algebraic structure preservation at fixed point)
-- [ ] Compare: MLP quaternion output, `e3nn` equivariant baseline, Rotor-EP
-- [ ] **Landscape analysis:** energy on S³ is well-studied — do attractors form expected symmetry orbits?
+- [x] Rotor normalization after each step: `q ← q / ‖q‖`
+- [x] Task A: **rotation regression** — predict 3D object orientation from observation
+- [x] Task B: **rotation composition** — given two input rotors, predict their product (tests algebraic structure preservation at fixed point)
+- [x] Compare: MLP quaternion output, `e3nn` equivariant baseline, Rotor-EP
+- [x] **Landscape analysis:** energy on S³ is well-studied — do attractors form expected symmetry orbits?
 
 ---
 
@@ -407,11 +407,11 @@ Total: E = Σ_{(i,j)} E_ij
 EP:    each x_i updates by ∂E/∂x_i = Σ_j W_ij x_j  (only neighbors)
 ```
 
-- [ ] Implement on `torch-geometric`; directed and undirected edge variants
-- [ ] Task 1: graph classification (MUTAG)
-- [ ] Task 2: symmetric lattice regression (synthetic; known rotational symmetry)
-- [ ] Compare: GCN, GAT, GCAN (Clifford-backprop), GEN-GNN (Clifford-EP)
-- [ ] **Key question:** does truly local EP produce globally equivariant representations without explicit global pooling?
+- [x] Implement on `torch-geometric`; directed and undirected edge variants
+- [x] Task 1: graph classification (MUTAG)
+- [x] Task 2: symmetric lattice regression (synthetic; known rotational symmetry)
+- [x] Compare: GCN, GAT, GCAN (Clifford-backprop), GEN-GNN (Clifford-EP)
+- [x] **Key question:** does truly local EP produce globally equivariant representations without explicit global pooling?
 
 ---
 
@@ -426,7 +426,7 @@ Update: x^(t+1) = grade_soft_thresh(x^(t) − (1/L) A^T(Ax^(t) − y), {λ_k/L})
 
 LISTA variant: learn A, λ_k jointly (unrolled ISTA as network layers, but layers are Clifford).
 
-- [ ] Implement `CliffordISTA` and `CliffordLISTA`
+- [x] Implement `CliffordISTA` and `CliffordLISTA`
 - [ ] Task: sparse reconstruction of geometric signals (3D point clouds, optical flow)
 - [ ] Compare: standard ISTA, Clifford-ISTA, Clifford-EP
 - [ ] **Novel question:** do Clifford dictionary atoms learn geometrically interpretable filters (oriented edges, oriented planes)?
@@ -443,7 +443,7 @@ Error:  ε_l = x_l − x̂_l      (multivector residual)
 Update: x_l ← x_l − α ε_l;  W_l ← W_l + η (ε_{l−1} ⊗ x_l)
 ```
 
-- [ ] Task: masked reconstruction (MNIST with 50% masked; test on rotated test set)
+- [x] Task: masked reconstruction (MNIST with 50% masked; test on rotated test set)
 - [ ] Compare: scalar PC, Clifford-BP autoencoder, Clifford-PC
 - [ ] **Key question:** do multivector prediction errors carry orientation information that scalar PC discards, resulting in geometrically consistent reconstructions?
 
@@ -453,7 +453,7 @@ Update: x_l ← x_l − α ε_l;  W_l ← W_l + η (ε_{l−1} ⊗ x_l)
 
 **Novel:** Compute layer targets as geometric inverses. If forward pass is `x_l = f(x_{l−1})`, the target for layer l−1 given target `x_l^target` is: `x_{l−1}^target ≈ f⁻¹(x_l^target)` where inversion uses the Clifford reversal: `f⁻¹(y) ≈ W̃ ✶ y / ‖W‖²`.
 
-- [ ] Task: same as P2.6 (masked reconstruction)
+- [x] Task: same as P2.6 (masked reconstruction)
 - [ ] Compare: standard TP, Clifford-TP, Clifford-EP, Clifford-PC
 - [ ] **Key question:** is geometric inversion via Clifford reversal a better layer-target approximation than pseudo-inverse?
 
@@ -492,7 +492,7 @@ Input: scalar feature tensor (batch, d)
 Output: scalar feature tensor (batch, d/7)
 ```
 
-- [ ] Implement `CliffordEPBottleneck(n_free, dynamics_rule, energy_fn)` as a standard `nn.Module`
+- [x] Implement `CliffordEPBottleneck(n_free, dynamics_rule, energy_fn)` as a standard `nn.Module`
 - [ ] Insert into ResNet-18 between layer2 and layer3 → test on CIFAR-10 under rotation
 - [ ] Insert into a 2-layer Transformer → test on text classification (SST-2)
 - [ ] Insert into actor-critic MLP → test on CartPole with mirror symmetry

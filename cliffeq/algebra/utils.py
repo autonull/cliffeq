@@ -23,41 +23,28 @@ def geometric_product(x, y, g):
     Supports:
     - Elementwise: x (B, N, I), y (B, N, I) -> (B, N, I)
     - Weight-based: x (B, Nin, I), y (Nout, Nin, I) -> (B, Nout, I)
+
+    Weight-based case is detected when y.shape[0] != x.shape[0] (different first dimension),
+    which indicates y is a weight matrix, not a batch of activations.
     """
     sig = CliffordSignature(g)
     kernel_fn = get_kernel_fn(sig.dim)
     I = sig.n_blades
 
-    if x.shape == y.shape:
-        # Elementwise geometric product
-        B, N, I_x = x.shape
-        assert I_x == I
+    # Check if this is weight-based (y is a weight matrix, not batched activations)
+    # Weight matrices have shape (Nout, Nin, I) while batched activations have shape (B, N, I)
+    # The key difference: y.shape[0] != x.shape[0] for weights, and y.shape != x.shape
+    is_weight_based = (y.ndim == 3 and x.ndim == 3 and
+                       y.shape[0] != x.shape[0] and  # Different first dimension
+                       y.shape[1] == x.shape[1])      # Same middle dimension (Nin)
 
-        # Flatten B and N to treat them as channels for the kernel
-        x_flat = x.view(B * N, 1, I) # (BN, 1, I)
-        y_flat = y.view(B * N, 1, I) # (BN, 1, I)
-
-        # y_flat as weights: (I, BN, 1)
-        w = y_flat.permute(2, 0, 1)
-        res = kernel_fn(w, sig.g)
-        # Fix: cliffordlayers kernel functions return (n_blades_out, weight_kernel)
-        kernel = res[1] if isinstance(res, tuple) else res
-
-        # x_flat: (BN, I)
-        x_reshaped = x_flat.view(B * N, I)
-
-        # Reshape kernel to (BN, I, I) for batched matrix multiplication
-        kernel = kernel.view(B * N, I, I)
-        out = torch.bmm(kernel, x_reshaped.unsqueeze(-1)).squeeze(-1)
-        return out.view(B, N, I)
-
-    elif y.ndim == 3 and x.ndim == 3:
+    if is_weight_based:
         # Weight-based (Linear layer style)
         # x: (B, Nin, I)
         # y: (Nout, Nin, I)
         B, Nin, I_x = x.shape
         Nout, Nin_y, I_y = y.shape
-        assert Nin == Nin_y and I_x == I and I_y == I
+        assert Nin == Nin_y and I_x == I and I_y == I, f"Shape mismatch: x={x.shape}, y={y.shape}, I={I}, expected y=(Nout, {Nin}, {I})"
 
         w = y.permute(2, 0, 1)
         res = kernel_fn(w, sig.g)
@@ -65,7 +52,38 @@ def geometric_product(x, y, g):
 
         x_reshaped = x.reshape(B, Nin * I)
         out = F.linear(x_reshaped, kernel)
-        return out.view(B, Nout, I)
+        result = out.view(B, Nout, I)
+        #print(f"    DEBUG: geometric_product weight-based: x={x.shape} w={y.shape} -> {result.shape}")
+        return result
+
+    elif x.shape == y.shape:
+        # Elementwise geometric product (B, N, I) * (B, N, I) -> (B, N, I)
+        B, N, I_x = x.shape
+        assert I_x == I
+
+        # Reshape x and y for iteration
+        x_flat = x.reshape(B * N, I)  # (BN, I)
+        y_flat = y.reshape(B * N, I)  # (BN, I)
+
+        # For each batch element, compute the geometric product using the kernel
+        # This avoids the batching issue where kernel_fn interprets BN as output channels
+        out_list = []
+        for i in range(B * N):
+            # Get y as a weight multivector: (I, 1, 1)
+            y_i = y_flat[i]  # (I,)
+            w_i = y_i.view(I, 1, 1)
+
+            # Get kernel for this y_i
+            res_i = kernel_fn(w_i, sig.g)
+            kernel_i = res_i[1] if isinstance(res_i, tuple) else res_i  # (I, I)
+
+            # Apply kernel to x_i
+            x_i = x_flat[i]  # (I,)
+            out_i = torch.matmul(kernel_i, x_i)  # (I,)
+            out_list.append(out_i)
+
+        out_flat = torch.stack(out_list)  # (BN, I)
+        return out_flat.view(B, N, I)
 
     else:
         raise NotImplementedError(f"Geometric product for shapes {x.shape} and {y.shape} not implemented")
@@ -117,16 +135,32 @@ def bivector_part(x, sig):
     else:
         return None
 
-def clifford_norm_sq(x, sig):
+def get_blade_signs(sig, device):
     g = sig.g
     if sig.dim == 3:
-        signs = torch.tensor([1.0, g[0], g[1], g[2], g[0]*g[1], g[0]*g[2], g[1]*g[2], g[0]*g[1]*g[2]], device=x.device)
+        # 1, e1, e2, e3, e12, e13, e23, e123
+        # squares: 1, g1, g2, g3, -g1g2, -g1g3, -g2g3, -g1g2g3
+        # reverse(x) * x scalar part:
+        # reverse(1) = 1, sq = 1
+        # reverse(ei) = ei, sq = gi
+        # reverse(eij) = -eij, sq = -(-gij) = gij
+        # reverse(e123) = -e123, sq = -(-g123) = g123
+        signs = torch.tensor([1.0, g[0], g[1], g[2], g[0]*g[1], g[0]*g[2], g[1]*g[2], g[0]*g[1]*g[2]], device=device)
     elif sig.dim == 2:
-        signs = torch.tensor([1.0, g[0], g[1], g[0]*g[1]], device=x.device)
+        # 1, e1, e2, e12
+        # reverse(1)=1, sq=1
+        # reverse(ei)=ei, sq=gi
+        # reverse(e12)=-e12, sq=-(-g1g2) = g1g2
+        signs = torch.tensor([1.0, g[0], g[1], g[0]*g[1]], device=device)
     elif sig.dim == 1:
-        signs = torch.tensor([1.0, g[0]], device=x.device)
+        # 1, e1
+        signs = torch.tensor([1.0, g[0]], device=device)
     else:
         raise NotImplementedError()
+    return signs
+
+def clifford_norm_sq(x, sig):
+    signs = get_blade_signs(sig, x.device)
     return torch.sum((x ** 2) * signs, dim=-1)
 
 def embed_scalar(x, sig):
@@ -143,3 +177,22 @@ def embed_vector(x, sig):
     elif sig.dim == 1:
         res[..., 1:2] = x
     return res
+
+def grade_soft_threshold(x, lambdas, sig):
+    """
+    Apply soft thresholding independently per grade.
+    lambdas: list or dict of thresholds per grade {grade: value}
+    """
+    if sig.dim == 3:
+        blade_grades = [0, 1, 1, 1, 2, 2, 2, 3]
+    elif sig.dim == 2:
+        blade_grades = [0, 1, 1, 2]
+    else:
+        blade_grades = [0, 1]
+
+    out = x.clone()
+    for i, g in enumerate(blade_grades):
+        l = lambdas[g] if isinstance(lambdas, (list, torch.Tensor)) else lambdas.get(g, 0.0)
+        if l > 0:
+            out[..., i] = torch.sign(x[..., i]) * torch.relu(torch.abs(x[..., i]) - l)
+    return out

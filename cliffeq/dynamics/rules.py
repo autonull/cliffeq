@@ -42,6 +42,8 @@ class ExpMap(DynamicsRule):
     def __init__(self, g):
         self.g = g
     def step(self, x, energy_fn, alpha) -> torch.Tensor:
+        # Placeholder: exponentiating a multivector grad is non-trivial.
+        # Use normalized geometric product as a stable approximation for now.
         return GeomProduct(self.g, normalize=True).step(x, energy_fn, alpha)
 
 class RotorOnly(DynamicsRule):
@@ -117,4 +119,22 @@ class WedgeUpdate(DynamicsRule):
     def __init__(self, g):
         self.g = g
     def step(self, x, energy_fn, alpha) -> torch.Tensor:
-        return GeomProduct(self.g, normalize=True).step(x, energy_fn, alpha)
+        x_in = x.detach().requires_grad_(True)
+        with torch.enable_grad():
+            E = energy_fn(x_in).sum()
+            grad = torch.autograd.grad(E, x_in)[0]
+
+        # Wedge product x ∧ ∇E
+        # Approximate with grade projection of geom product (keeping higher grades)
+        sig = CliffordSignature(self.g)
+        gp = geometric_product(x_in, grad, self.g)
+
+        # Keep vector, bivector, trivector parts for the update
+        update = grade_project(gp, [1, 2, 3], sig)
+
+        # Normalize update to match gradient scale for stability
+        up_norm = torch.norm(update.reshape(x.shape[0], -1), dim=-1)
+        grad_norm = torch.norm(grad.reshape(x.shape[0], -1), dim=-1)
+        ratio = (grad_norm / (up_norm + 1e-8)).view(-1, *([1]*(x.ndim-1)))
+
+        return (x_in - alpha * update * ratio).detach()
