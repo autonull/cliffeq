@@ -12,9 +12,17 @@ from cliffeq.models.hybrid import CliffordEPBottleneck, CliffordBPBottleneck
 from cliffeq.energy.zoo import BilinearEnergy
 from cliffeq.dynamics.rules import LinearDot
 
-def load_sst2_simple(vocab_size=10000, seq_length=100, num_samples=200):
+def load_sst2_simple(vocab_size=10000, seq_length=100, num_samples=1000):
     X = torch.randint(0, vocab_size, (num_samples, seq_length))
-    y = torch.randint(0, 2, (num_samples,))
+    # Tokens 0-50 are "positive", 51-100 are "negative"
+    pos_counts = (X[:, :20] < 50).sum(dim=1)
+    neg_counts = ((X[:, :20] >= 50) & (X[:, :20] < 100)).sum(dim=1)
+    y = (pos_counts > neg_counts).long()
+
+    # Add 20% label noise
+    noise_mask = torch.rand(num_samples) < 0.2
+    y[noise_mask] = 1 - y[noise_mask]
+
     train_size = int(0.8 * num_samples)
     return (X[:train_size], y[:train_size]), (X[train_size:], y[train_size:])
 

@@ -35,8 +35,8 @@ def run_ppo(variant):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     env = gym.make("CartPole-v1")
     model = Policy(variant).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
-    for _ in range(20):
+    optimizer = optim.Adam(model.parameters(), lr=0.02)
+    for _ in range(15):
         s, _ = env.reset(); done = False; states, actions, rewards = [], [], []
         while not done:
             st = torch.tensor(s, dtype=torch.float32, device=device).unsqueeze(0)
