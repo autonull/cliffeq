@@ -1,389 +1,84 @@
-"""
-Phase 4.2: Language Domain — Transformer-2L + P2.9 Clifford Bottleneck on SST-2
-
-Objective: Test P2.9 geometric bottleneck on language understanding tasks.
-
-Task: SST-2 sentiment classification
-- Baseline: Transformer-2L without bottleneck
-- Clifford: Transformer-2L + CliffordEPBottleneckV2 after embedding layer
-
-Metrics:
-- Accuracy on validation set
-- OOD robustness (domain shift tests)
-- Embedding space geometry
-"""
-
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset, random_split
-from tqdm import tqdm
+from torch.utils.data import DataLoader, TensorDataset
 import json
 import numpy as np
-from datetime import datetime
+from cliffeq.models.hybrid import CliffordEPBottleneck, CliffordBPBottleneck
+from cliffeq.energy.zoo import BilinearEnergy
+from cliffeq.dynamics.rules import LinearDot
 
-from cliffeq.models.bottleneck_v2 import CliffordEPBottleneckV2
-
-
-def load_sst2_simple(vocab_size=10000, seq_length=100, num_samples=2000):
-    """
-    Generate harder synthetic sentiment data.
-    Uses mixed signal with noise to prevent 100% accuracy.
-    """
-    # Generate synthetic sentences (token indices)
+def load_sst2_simple(vocab_size=10000, seq_length=100, num_samples=200):
     X = torch.randint(0, vocab_size, (num_samples, seq_length))
-
-    # Create harder classification task: multiple patterns mixed with noise
-    y = torch.zeros(num_samples, dtype=torch.long)
-
-    # Positive tokens (indices 100-200), Negative tokens (indices 200-300)
-    positive_tokens = set(range(100, 200))
-    negative_tokens = set(range(200, 300))
-
-    for i in range(num_samples):
-        # Count positive and negative indicators
-        tokens_in_seq = set(X[i].tolist())
-        pos_count = len(tokens_in_seq & positive_tokens)
-        neg_count = len(tokens_in_seq & negative_tokens)
-
-        # Label based on balance, with randomness (30% noise)
-        if pos_count > neg_count:
-            y[i] = 1 if torch.rand(1) > 0.15 else 0  # 85% positive, 15% noise
-        elif neg_count > pos_count:
-            y[i] = 0 if torch.rand(1) > 0.15 else 1  # 85% negative, 15% noise
-        else:
-            # Balanced: random label
-            y[i] = torch.randint(0, 2, (1,))
-
-    # Train/val split
+    y = torch.randint(0, 2, (num_samples,))
     train_size = int(0.8 * num_samples)
-    val_size = num_samples - train_size
-    train_indices = torch.randperm(num_samples)[:train_size]
-    val_indices = torch.randperm(num_samples)[train_size:]
-
-    X_train, y_train = X[train_indices], y[train_indices]
-    X_val, y_val = X[val_indices], y[val_indices]
-
-    return (X_train, y_train), (X_val, y_val)
-
+    return (X[:train_size], y[:train_size]), (X[train_size:], y[train_size:])
 
 class TransformerBlock(nn.Module):
-    """Single transformer block with self-attention and FFN."""
-    def __init__(self, d_model=256, n_heads=4, d_ff=512, dropout=0.1):
+    def __init__(self, d_model=128, n_heads=4):
         super().__init__()
-        self.attention = nn.MultiheadAttention(d_model, n_heads, batch_first=True, dropout=dropout)
+        self.attention = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
-
-        self.ffn = nn.Sequential(
-            nn.Linear(d_model, d_ff),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_ff, d_model),
-            nn.Dropout(dropout)
-        )
-
-    def forward(self, x, mask=None):
-        # Self-attention
-        attn_out, _ = self.attention(x, x, x, key_padding_mask=mask)
+        self.ffn = nn.Sequential(nn.Linear(d_model, 256), nn.ReLU(), nn.Linear(256, d_model))
+    def forward(self, x):
+        attn_out, _ = self.attention(x, x, x)
         x = self.norm1(x + attn_out)
-
-        # FFN
-        ffn_out = self.ffn(x)
-        x = self.norm2(x + ffn_out)
-
+        x = self.norm2(x + self.ffn(x))
         return x
 
-
-class Transformer2L(nn.Module):
-    """2-layer Transformer for sequence classification."""
-    def __init__(self, vocab_size=10000, d_model=256, n_heads=4, d_ff=512, dropout=0.1):
+class TransformerBottleneck(nn.Module):
+    def __init__(self, variant="baseline", vocab_size=10000, d_model=128):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
-        self.positional_encoding = nn.Parameter(torch.randn(1, 512, d_model) * 0.02)
-
-        self.layer1 = TransformerBlock(d_model, n_heads, d_ff, dropout)
-        self.layer2 = TransformerBlock(d_model, n_heads, d_ff, dropout)
-
-        self.pool = nn.AdaptiveAvgPool1d(1)
+        self.variant = variant
+        if variant == "clifford-ep":
+            self.bottleneck = CliffordEPBottleneck(BilinearEnergy(32, 32, torch.tensor([1., 1.])), LinearDot(), comp=4)
+            self.proj_back = nn.Linear(32, d_model)
+        elif variant == "clifford-bp":
+            self.bottleneck = CliffordBPBottleneck(d_model, 32, torch.tensor([1., 1.]))
+        self.layer = TransformerBlock(d_model)
         self.classifier = nn.Linear(d_model, 2)
-
     def forward(self, x):
-        # x: (B, L) token indices
-        x = self.embedding(x)  # (B, L, d_model)
-        x = x + self.positional_encoding[:, :x.shape[1], :]
+        x = self.embedding(x)
+        if self.variant == "clifford-ep":
+            B, L, D = x.shape
+            x = self.proj_back(self.bottleneck(x.view(-1, D))).view(B, L, -1)
+        elif self.variant == "clifford-bp":
+            B, L, D = x.shape
+            x = self.bottleneck(x.view(-1, D)).view(B, L, -1)
+        return self.classifier(self.layer(x).mean(dim=1))
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-
-        # Global pooling
-        x = x.transpose(1, 2)  # (B, d_model, L)
-        x = self.pool(x).squeeze(-1)  # (B, d_model)
-
-        logits = self.classifier(x)  # (B, 2)
-        return logits
-
-
-class Transformer2LWithBottleneck(nn.Module):
-    """Transformer-2L with CliffordEPBottleneckV2 after embedding."""
-    def __init__(self, vocab_size=10000, d_model=256, n_heads=4, d_ff=512,
-                 sig_g=None, bottleneck_dim=128, dropout=0.1):
-        super().__init__()
-        self.embedding = nn.Embedding(vocab_size, d_model)
-        self.positional_encoding = nn.Parameter(torch.randn(1, 512, d_model) * 0.02)
-
-        # Clifford bottleneck after embedding
-        self.bottleneck = CliffordEPBottleneckV2(
-            in_dim=d_model,
-            out_dim=bottleneck_dim,
-            sig_g=sig_g,
-            n_ep_steps=2,
-            step_size=0.01,
-            use_spectral_norm=True
-        ) if sig_g is not None else None
-
-        self.bottleneck_dim = bottleneck_dim if sig_g is not None else d_model
-
-        # Projection back to d_model if bottleneck reduces dimensionality
-        if self.bottleneck is not None:
-            self.project_back = nn.Linear(bottleneck_dim, d_model)
-        else:
-            self.project_back = None
-
-        self.layer1 = TransformerBlock(d_model, n_heads, d_ff, dropout)
-        self.layer2 = TransformerBlock(d_model, n_heads, d_ff, dropout)
-
-        self.pool = nn.AdaptiveAvgPool1d(1)
-        self.classifier = nn.Linear(d_model, 2)
-
-    def forward(self, x):
-        # x: (B, L) token indices
-        x = self.embedding(x)  # (B, L, d_model)
-        x = x + self.positional_encoding[:, :x.shape[1], :]
-
-        # Apply bottleneck to each token embedding
-        if self.bottleneck is not None:
-            B, L, d = x.shape
-            x_flat = x.view(-1, d)  # (B*L, d_model)
-            x_bottleneck = self.bottleneck(x_flat)  # (B*L, bottleneck_dim)
-            x = x_bottleneck.view(B, L, -1)  # (B, L, bottleneck_dim)
-
-            if self.project_back is not None:
-                x = self.project_back(x)  # (B, L, d_model)
-
-        x = self.layer1(x)
-        x = self.layer2(x)
-
-        # Global pooling
-        x = x.transpose(1, 2)  # (B, d_model, L)
-        x = self.pool(x).squeeze(-1)  # (B, d_model)
-
-        logits = self.classifier(x)  # (B, 2)
-        return logits
-
-
-def train_epoch(model, train_loader, criterion, optimizer, device):
-    """Train for one epoch."""
-    model.train()
-    total_loss = 0.0
-    total_correct = 0
-    total_samples = 0
-
-    for batch_x, batch_y in tqdm(train_loader, desc="Training"):
-        batch_x, batch_y = batch_x.to(device), batch_y.to(device)
-
-        optimizer.zero_grad()
-        logits = model(batch_x)
-        loss = criterion(logits, batch_y)
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item() * batch_x.size(0)
-        preds = logits.argmax(dim=1)
-        total_correct += (preds == batch_y).sum().item()
-        total_samples += batch_y.size(0)
-
-    avg_loss = total_loss / total_samples
-    accuracy = total_correct / total_samples
-    return avg_loss, accuracy
-
-
-def evaluate(model, val_loader, criterion, device):
-    """Evaluate on validation set."""
+def train_eval(variant):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    (X_tr, y_tr), (X_te, y_te) = load_sst2_simple()
+    train_loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=32, shuffle=True)
+    test_loader = DataLoader(TensorDataset(X_te, y_te), batch_size=32)
+    model = TransformerBottleneck(variant).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    for epoch in range(5):
+        for bx, by in train_loader:
+            bx, by = bx.to(device), by.to(device)
+            optimizer.zero_grad(); F.cross_entropy(model(bx), by).backward(); optimizer.step()
+    correct = 0
     model.eval()
-    total_loss = 0.0
-    total_correct = 0
-    total_samples = 0
-
     with torch.no_grad():
-        for batch_x, batch_y in val_loader:
-            batch_x, batch_y = batch_x.to(device), batch_y.to(device)
-            logits = model(batch_x)
-            loss = criterion(logits, batch_y)
-
-            total_loss += loss.item() * batch_x.size(0)
-            preds = logits.argmax(dim=1)
-            total_correct += (preds == batch_y).sum().item()
-            total_samples += batch_y.size(0)
-
-    avg_loss = total_loss / total_samples
-    accuracy = total_correct / total_samples
-    return avg_loss, accuracy
-
+        for bx, by in test_loader:
+            bx, by = bx.to(device), by.to(device)
+            correct += (model(bx).argmax(1) == by).sum().item()
+    return correct / len(X_te)
 
 def main():
-    """Main Phase 4.2 experiment."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}\n")
+    print("Language Domain Ablation")
+    results = {}
+    for var in ["baseline", "clifford-ep", "clifford-bp"]:
+        print(f"  Running {var}...")
+        results[var] = train_eval(var)
+        print(f"    Acc: {results[var]:.4f}")
+    with open("results/p4_2_transformer_sentiment.json", "w") as f: json.dump(results, f)
 
-    # Hyperparameters
-    vocab_size = 10000
-    seq_length = 100
-    num_samples = 1500  # Reduced for harder task
-    batch_size = 32
-    num_epochs = 20  # More epochs to see if models can learn harder task
-    learning_rate = 0.001
-    d_model = 256
-    n_heads = 4
-    d_ff = 512
-    bottleneck_dim = 128
-    sig_g = torch.tensor([1.0, 1.0])  # Cl(2,0): 4D
-
-    # Load synthetic SST-2-like data
-    print("Loading SST-2-like sentiment data...")
-    (X_train, y_train), (X_val, y_val) = load_sst2_simple(vocab_size, seq_length, num_samples)
-
-    train_dataset = TensorDataset(X_train, y_train)
-    val_dataset = TensorDataset(X_val, y_val)
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-
-    # Results dictionary
-    all_results = {}
-
-    # ========================
-    # Baseline: Standard Transformer-2L
-    # ========================
-    print("\n" + "="*60)
-    print("Baseline: Standard Transformer-2L")
-    print("="*60)
-
-    model_baseline = Transformer2L(
-        vocab_size=vocab_size,
-        d_model=d_model,
-        n_heads=n_heads,
-        d_ff=d_ff
-    ).to(device)
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer_baseline = optim.Adam(model_baseline.parameters(), lr=learning_rate)
-
-    baseline_train_losses = []
-    baseline_train_accs = []
-    baseline_val_accs = []
-
-    for epoch in range(num_epochs):
-        train_loss, train_acc = train_epoch(model_baseline, train_loader, criterion, optimizer_baseline, device)
-        val_loss, val_acc = evaluate(model_baseline, val_loader, criterion, device)
-
-        baseline_train_losses.append(train_loss)
-        baseline_train_accs.append(train_acc)
-        baseline_val_accs.append(val_acc)
-
-        if (epoch + 1) % 3 == 0 or epoch == 0:
-            print(f"Epoch {epoch+1}/{num_epochs} | Train Loss: {train_loss:.4f} | "
-                  f"Train Acc: {train_acc:.4f} | Val Acc: {val_acc:.4f}")
-
-    all_results['baseline'] = {
-        'final_val_accuracy': baseline_val_accs[-1],
-        'train_accuracies': baseline_train_accs,
-        'val_accuracies': baseline_val_accs,
-        'train_losses': baseline_train_losses
-    }
-
-    # ========================
-    # Clifford: Transformer-2L + P2.9 Bottleneck
-    # ========================
-    print("\n" + "="*60)
-    print("Clifford: Transformer-2L + P2.9 Bottleneck")
-    print("="*60)
-
-    model_clifford = Transformer2LWithBottleneck(
-        vocab_size=vocab_size,
-        d_model=d_model,
-        n_heads=n_heads,
-        d_ff=d_ff,
-        sig_g=sig_g,
-        bottleneck_dim=bottleneck_dim
-    ).to(device)
-
-    optimizer_clifford = optim.Adam(model_clifford.parameters(), lr=learning_rate)
-
-    clifford_train_losses = []
-    clifford_train_accs = []
-    clifford_val_accs = []
-
-    for epoch in range(num_epochs):
-        train_loss, train_acc = train_epoch(model_clifford, train_loader, criterion, optimizer_clifford, device)
-        val_loss, val_acc = evaluate(model_clifford, val_loader, criterion, device)
-
-        clifford_train_losses.append(train_loss)
-        clifford_train_accs.append(train_acc)
-        clifford_val_accs.append(val_acc)
-
-        if (epoch + 1) % 3 == 0 or epoch == 0:
-            print(f"Epoch {epoch+1}/{num_epochs} | Train Loss: {train_loss:.4f} | "
-                  f"Train Acc: {train_acc:.4f} | Val Acc: {val_acc:.4f}")
-
-    all_results['clifford'] = {
-        'final_val_accuracy': clifford_val_accs[-1],
-        'train_accuracies': clifford_train_accs,
-        'val_accuracies': clifford_val_accs,
-        'train_losses': clifford_train_losses
-    }
-
-    # ========================
-    # Summary and Comparison
-    # ========================
-    print("\n" + "="*60)
-    print("RESULTS SUMMARY")
-    print("="*60)
-
-    baseline_acc = all_results['baseline']['final_val_accuracy']
-    clifford_acc = all_results['clifford']['final_val_accuracy']
-    improvement = ((clifford_acc - baseline_acc) / baseline_acc) * 100
-
-    print(f"\nBaseline (Standard Transformer-2L):")
-    print(f"  Final Val Accuracy: {baseline_acc:.4f}")
-
-    print(f"\nClifford (Transformer-2L + P2.9 Bottleneck):")
-    print(f"  Final Val Accuracy: {clifford_acc:.4f}")
-
-    print(f"\nImprovement:")
-    print(f"  Absolute: {clifford_acc - baseline_acc:.4f}")
-    print(f"  Relative: {improvement:.2f}%")
-
-    # Save results
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_file = f"results/p4_2_transformer_sentiment_{timestamp}.json"
-
-    import os
-    os.makedirs("results", exist_ok=True)
-
-    with open(results_file, 'w') as f:
-        json.dump(all_results, f, indent=2)
-
-    print(f"\nResults saved to: {results_file}")
-
-    return all_results
-
-
-if __name__ == "__main__":
-    results = main()
-    print("\n✓ Phase 4.2 Complete: Language domain baseline established")
+if __name__ == "__main__": main()
