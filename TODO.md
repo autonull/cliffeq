@@ -400,7 +400,7 @@ Note: this energy IS the Modern Hopfield energy with Clifford inner product. Ret
 - [x] **Key test:** query rotated by θ ∈ [0°, 360°] → same pattern retrieved (equivariant retrieval)
 - [x] Capacity test: max patterns storable before retrieval degrades vs. dimension
 - [x] Compare: scalar Hopfield, Modern Hopfield (softmax), quaternion Hopfield, Clifford-Hopfield
-- [x] **Connection to attention:** CliffordHopfield retrieval IS CliffordAttention (F6) with patterns as keys/values
+- [x] **Connection to attention:** CliffordHopfield retrieval IS CliffordAttention (F6) with BI-vector as patterns as keys/values
 
 **Success criterion:** Equivariant retrieval accuracy >80% for arbitrary rotation; scalar Hopfield should degrade significantly.
 
@@ -776,7 +776,7 @@ Controlled tasks with known ground-truth symmetry — the primary diagnostic for
 
 **Task:** Predict scalar quantum-chemical properties (atomization energy, HOMO-LUMO gap, dipole moment, etc.) from 3D molecular geometry. QM9 contains ~134k small organic molecules with DFT-computed ground-truth properties.
 
-- [x] **Dataset:** `from torch_geometric.datasets import QM9; dataset = QM9(root='data/QM9')` — 133,885 molecules; 19 DFT properties; standard split: 110k train / 10k val / 13.8k test (Schütt et al. 2018); normalize each property by mean/std of training set
+- [ ] **Dataset:** `from torch_geometric.datasets import QM9; dataset = QM9(root='data/QM9')` — 133,885 molecules; 19 DFT properties; standard split: 110k train / 10k val / 13.8k test (Schütt et al. 2018); normalize each property by mean/std of training set
   - Priority targets: U₀ = internal energy at 0K (index 7, units eV, SOTA MAE ≈ 0.009 eV with NequIP); μ = dipole moment (index 0, Debye); HOMO (index 2), LUMO (index 3) energy gaps (eV)
 - [ ] **State encoding per atom:** grade-0 = atom type embedding (5 types H,C,N,O,F → linear projection to scalar); grade-1 = 3D position (x,y,z); grade-2 = sum of bond direction bivectors to neighbors: `Σ_{j∈N(i)} (r_j−r_i)/‖r_j−r_i‖ ∧ ê_ref` normalized; result: (batch_nodes, 8) Cl(3,0), with `torch_geometric` batch indexing for variable-size molecules
 - [ ] **Model:** GEN-GNN (P2.4) with Gaussian radial basis functions (RBF) of interatomic distance as edge weights (same as SchNet); `W_ij(d) = Σ_k c_k exp(−(d−μ_k)²/σ²)` with K=20 RBF centers on [0,5]Å; 3 message-passing / EP iterations; readout: sum over atoms of `scalar_part(x_i)` → linear → predicted property
@@ -847,7 +847,6 @@ Build alongside PoCs as needed.
 ### A1: Fixed-Point Geometry Visualizer
 - [ ] **Cl(2,0) animation:** at each EP iteration, render 4D multivector state as: grade-0=background brightness, grade-1=(x,y) arrow from origin, grade-2=oriented sector (filled arc in direction of bivector axis); use `matplotlib.animation.FuncAnimation`; save as GIF; show scalar EP vs. Clifford-EP side-by-side; 10 random initializations
 - [ ] **Cl(3,0) 3D projection:** use `plotly.graph_objects.Scatter3d`; vector part (grade-1) as 3D point; bivector part (grade-2) as oriented plane disk (construct plane from e₁∧e₂, e₁∧e₃, e₂∧e₃ components); animate relaxation trajectory over EP steps; save as HTML interactive plot
-- [ ] **Side-by-side convergence:** for P1.1 task, show 5 random initializations converging to fixed points; color-code by which fixed point they reach; expect Clifford attractors to have geometric symmetry that scalar attractors lack
 
 ### A2: Attractor Landscape Analysis
 - [ ] Sample 500 random Cl(3,0) initializations → run EP to convergence (energy change < 1e-6); cluster by `‖x_i − x_j‖ < ε=0.1`; report: (a) number of distinct attractor clusters, (b) mean intra-cluster distance, (c) distance between cluster centroids
