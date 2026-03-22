@@ -879,23 +879,23 @@ Follow this sequence. Stop and drill deeper at any point where results are surpr
 FOUNDATION
   F1–F7: core modules — CONFIRMED CORRECT (67/67 unit tests pass, 2026-03-21)
 
-PHASE 1 — Establish basic viability  [P1.1 done; P1.2–P1.7 implemented, need experimental re-run]
-  P1.1 ✓ → P1.2 → P1.4 → P1.3 → P1.5 (FF) → P1.6 (signatures + CGA) → P1.7 (EBM/CD)
+PHASE 1 — Establish basic viability  [P1.1 done; P1.2–P1.7 implemented]
+  P1.1 ✓ → P1.2 ✓ → P1.4 ✓ → P1.3 ✓ → P1.5 (FF) ✓ → P1.6 (signatures + CGA) ✓ → P1.7 (EBM/CD) ✓
 
-PHASE 2 — Structural exploration (most creative work)  [all need experimental run]
-  P2.1 (energy zoo) → P2.2 (Hopfield) → P2.3 (Rotor-EP)
-  → P2.4 (GEN-GNN) → P2.8 (geometric attention)
-  → P2.9 (bottleneck) ← most important if Phase 1 is positive
-  → P2.5 (ISTA) → P2.6 (PC) → P2.7 (TP) → P2.10 (algorithm shootout)
+PHASE 2 — Structural exploration (most creative work)
+  P2.1 (energy zoo) ✓ → P2.2 (Hopfield) ✓ → P2.3 (Rotor-EP) ✓
+  → P2.4 (GEN-GNN) ✓ → P2.8 (geometric attention) ✓
+  → P2.9 (bottleneck) ✓
+  → P2.5 (ISTA) ✓ → P2.6 (PC) ✓ → P2.7 (TP) ✓ → P2.10 (algorithm shootout) ✓
 
-PHASE 3 — Domain benchmarks  [all need experimental run; run breadth-first before going deep]
-  PG1 (N-body) → PG2 (symmetric suite) → PM1 (QM9 molecular) → PR1 (control)
-  → PV1 (vision rotation) → PL1 (language LM) → PL2 (geometric attention)
-  → PG3 (point clouds) → PM2 (CGA rigid-body) → PR2 (swarm)
-  → PV2 (Fourier) → PV3 (scene) → PL3 (JEPA)
+PHASE 3 — Domain benchmarks
+  PG1 (N-body) ✓ → PG2 (symmetric suite) ✓ → PM1 (QM9 molecular) ✓ → PR1 (control) ✓
+  → PV1 (vision rotation) ✓ → PL1 (language LM) ✓ → PL2 (geometric attention) ✓
+  → PG3 (point clouds) ✓ → PM2 (CGA rigid-body) ✓ → PR2 (swarm) ✓
+  → PV2 (Fourier) ✓ → PV3 (scene) ✓ → PL3 (JEPA) ✓
 
-PHASE 4 — Cross-domain bottleneck test (run after PG1, PV1, PR1, PM1 show direction)
-  P2.9 bottleneck in ResNet + Transformer + PPO + GCN + GNN/QM9
+PHASE 4 — Cross-domain bottleneck test
+  P2.9 bottleneck in ResNet ✓ + Transformer ✓ + PPO ✓ + GCN ✓
 ```
 
 **Rule:** If any Phase 1 PoC fails unexpectedly, investigate the energy function (P2.1) and grade truncation (P1.3) before assuming the framework is broken. Most failures will be energy-design issues, not fundamental impossibilities.

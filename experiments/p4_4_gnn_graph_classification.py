@@ -9,18 +9,36 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv, global_mean_pool
 import networkx as nx
+import numpy as np
 import json
 from cliffeq.models.hybrid import CliffordEPBottleneck, CliffordBPBottleneck
 from cliffeq.energy.zoo import BilinearEnergy
 from cliffeq.dynamics.rules import LinearDot
 
-def create_synthetic_data(num=100):
+def create_synthetic_data(num=500):
     dataset = []
     for _ in range(num):
-        G = nx.erdos_renyi_graph(20, 0.2)
+        p = np.random.uniform(0.1, 0.3)
+        G = nx.erdos_renyi_graph(20, p)
         edge_index = torch.tensor(list(G.edges)).t().contiguous()
         if edge_index.numel() == 0: edge_index = torch.zeros((2, 0), dtype=torch.long)
-        x = torch.randn(20, 8); y = torch.tensor([1 if nx.density(G) > 0.2 else 0])
+
+        density = nx.density(G)
+        num_triangles = sum(nx.triangles(G).values()) / 3
+
+        # Label is 1 if high density AND some triangles
+        label = 1 if (density > 0.18 and num_triangles > 2) else 0
+
+        # Add 15% noise to labels
+        if np.random.rand() < 0.15:
+            label = 1 - label
+
+        x = torch.randn(20, 8)
+        # Add some signal to node features correlated with degree
+        degrees = torch.tensor([d for n, d in G.degree()], dtype=torch.float32).view(-1, 1)
+        x[:, 0:1] = x[:, 0:1] + degrees * 0.5
+
+        y = torch.tensor([label])
         dataset.append(Data(x=x, edge_index=edge_index, y=y))
     return dataset
 
