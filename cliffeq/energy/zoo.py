@@ -56,6 +56,7 @@ class GraphEnergy(EnergyFunction):
         super().__init__(use_spectral_norm=use_spectral_norm)
         self.register_buffer("g", sig_g)
         self.sig = CliffordSignature(sig_g)
+        self.hidden_dim = nodes
         self.W = nn.Parameter(torch.randn(nodes, nodes, self.sig.n_blades) * 0.1)
         self.apply_sn()
 

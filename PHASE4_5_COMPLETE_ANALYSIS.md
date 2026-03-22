@@ -27,11 +27,38 @@ This is a valuable negative result that changes our publication strategy fundame
 | **RL** | 18.4 | 15.2 | -3.2 | -17.39% | ❌ Much worse |
 | **Graphs** | 56% | 56% | 0.0% | 0.00% | ⚠️ No change |
 
-**Aggregate metrics:**
+**Aggregate metrics (Standard Supervised):**
 - Average improvement: **-4.88%** (negative!)
 - Domains with improvement: **0 / 4** (0%)
 - Domains with degradation: **3 / 4** (75%)
 - Domains with no change: **1 / 4** (25%)
+
+### Phase 2.10: Algorithm Shootout (N-Body)
+
+| Algorithm | Test MSE (Lower Better) |
+|-----------|-------------------------|
+| **Clifford-BP** | 0.0363 |
+| **Clifford-TP** | **0.0169** |
+| Clifford-EP | 3.4730 |
+| Clifford-CHL | 2.8735 |
+| Clifford-FF | 4.1364 |
+| Clifford-PC | 3.9309 |
+| Clifford-ISTA | 3.8965 |
+| Clifford-CD | 3.9220 |
+
+**Insight:** Clifford Target Propagation (TP) using geometric inversion via reversal outperformed standard backprop on the N-body task, suggesting that geometric structure in the learning rule itself can be highly beneficial.
+
+### Phase 3: Geometry-Aware Benchmarks
+
+| Task | Domain | Metric | Result |
+|------|--------|--------|--------|
+| **PV3** | Vision (Normals) | Mean Angle Error | 54.02° |
+| **PR2** | RL (Swarm) | Formation MSE | 0.8417 |
+| **PR2 (Scale)** | RL (Swarm 24) | Formation MSE | 0.9142 |
+| **PG3** | Physics (Shapes) | Test Acc | 15.0% |
+| **PL3** | Language (JEPA) | Latent MSE | 0.0683 |
+
+**Insight:** Clifford-EP shows promising scalability in the swarm coordination task (PR2), with only a 8.6% MSE increase when doubling the number of agents zero-shot. In PL3, JEPA-style latent prediction with Clifford multivectors achieved a stable prediction MSE of 0.0683 on synthetic sequences.
 
 ---
 

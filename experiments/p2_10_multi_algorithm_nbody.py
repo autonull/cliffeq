@@ -114,17 +114,15 @@ def test_clifford_ep_nbody():
             target_mv = torch.zeros_like(x_init)
             target_mv[:, :, 1:4] = pos_next[:, t].to(device)
 
-            # EP free phase
-            x_free = model_ep.free_phase(x_init)
+            # Use proper EP train step
+            def ep_loss(h, target):
+                return 0.5 * torch.sum((h[:, :, 1:4] - target[:, :, 1:4])**2)
 
-            # EP clamped phase (simplified: just compare to target)
-            loss = F.mse_loss(x_free[:, :, 1:4], target_mv[:, :, 1:4])
+            h_free = model_ep.train_step(x_init, target_mv, optimizer, loss_fn=ep_loss)
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            total_loss += loss.item()
+            with torch.no_grad():
+                loss = F.mse_loss(h_free[:, :, 1:4], target_mv[:, :, 1:4])
+                total_loss += loss.item()
 
         print(f"  Epoch {epoch+1}: avg_loss={total_loss / (T-1):.6f}")
 
