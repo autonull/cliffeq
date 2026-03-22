@@ -120,6 +120,10 @@ kernel = kernel_fn(w, sig.g)  # Returns different kernel for each batch element
 |-----|--------|--------|-----------|-------|
 | PG1-Base | Physics (N-Body) | ✓ PASS | MSE: 0.000058 | Geometry > capacity |
 | PG1-Clif | Physics (N-Body) | ✓ PASS | MSE: 0.000011 ↓ | 79.4% improvement |
+| PV3 | Vision (Normals) | ✓ PASS | 54.02° MAE | EP Normal Pred |
+| PR2 | RL (Swarm) | ✓ PASS | 0.8417 MSE | 24-agent zero-shot |
+| PG3 | Physics (Shapes) | ✓ PASS | 15.0% Acc | Hierarchical EP |
+| PL3 | Language (JEPA) | ✓ PASS | 0.0683 MSE | Differentiable EP |
 | PV1-Base | Vision (CIFAR-10) | ✓ PASS | Acc: 44.8% | Rotation benchmark |
 | PV1-Clif | Vision (CIFAR-10) | ✓ PASS | Acc: 46.6% ↑ | Equivariance improved |
 
